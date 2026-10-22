@@ -8,15 +8,15 @@ kotlin {
 }
 
 android {
-    namespace = "io.github.undercord.xposed"
+    namespace = "io.github.deltacord.xposed"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "io.github.undercord.xposed"
+        applicationId = "io.github.deltacord.xposed"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 1902
-        versionName = "1.9.2"
+        versionCode = 1903
+        versionName = "1.9.3"
     }
 
     sourceSets {

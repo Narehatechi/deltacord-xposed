@@ -14,6 +14,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "UndercordXposed"
+rootProject.name = "DeltacordXposed"
 include(":app")
 include(":api")

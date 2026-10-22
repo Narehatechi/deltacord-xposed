@@ -26,31 +26,31 @@
    </a>
 </p>
 
-# UndercordXposed
+# DeltacordXposed
 
-**Discord, your way.** UndercordXposed is an Xposed module that loads [Undercord](https://github.com/Narehatechi/undercord-bundle-next) into Discord Android.
+**Discord, your way.** DeltacordXposed is an Xposed module that loads [Deltacord](https://github.com/Narehatechi/deltacord-bundle-next) into Discord Android.
 
-UndercordXposed is the root installation method for Undercord. It bootstraps the Undercord bundle inside Discord's process, manages the plugin system, and bridges JavaScript with the Android platform.
+DeltacordXposed is the root installation method for Deltacord. It bootstraps the Deltacord bundle inside Discord's process, manages the plugin system, and bridges JavaScript with the Android platform.
 
 ## ❓ About
 
-This repository builds the Xposed module (the loader) for Undercord. The module injects into official Discord Android clients via the Xposed Framework, loads the Undercord Hermes bytecode bundle,
+This repository builds the Xposed module (the loader) for Deltacord. The module injects into official Discord Android clients via the Xposed Framework, loads the Deltacord Hermes bytecode bundle,
 and provides native capabilities to it: plugin loading, file system access, and more.
 
 ## 💪 Features
 
-- **📦 Bundle loading**: Bootstraps the Undercord bundle inside Discord
+- **📦 Bundle loading**: Bootstraps the Deltacord bundle inside Discord
 - **🔌 Native plugins**: Install, update, and run plugins with native (Kotlin/JVM) and JavaScript parts
 - **🎨 Themes, fonts & system colors**: Native support for appearance customization
 - **🛡️ Tracking blockers**: Blocks crash reporting and deep-link tracking
 
 ## ⬇️ Download
 
-Grab the latest module APK from the [Releases](https://github.com/Narehatechi/undercord-xposed/releases/latest) page and install it on a device with the Xposed Framework (e.g. [Vector](https://github.com/JingMatrix/Vector)):
+Grab the latest module APK from the [Releases](https://github.com/Narehatechi/deltacord-xposed/releases/latest) page and install it on a device with the Xposed Framework (e.g. [Vector](https://github.com/JingMatrix/Vector)):
 
 1. Install the module APK (Android 7.0+).
 2. Enable the module for Discord in your Xposed manager.
-3. Restart Discord, and you should be running Undercord!
+3. Restart Discord, and you should be running Deltacord!
 
 ## 👷 Development
 
@@ -71,14 +71,14 @@ You'll need a JDK (25 recommended) and the Android SDK. Once you have those, fol
 ./gradlew :api:publishToMavenLocal
 ```
 
-<sub>Native plugins link against the `io.github.undercord:api` artifact.</sub>
+<sub>Native plugins link against the `io.github.deltacord:api` artifact.</sub>
 
-The API is also published to [GitHub Packages](https://github.com/Narehatechi/undercord-xposed/packages). GitHub Packages requires authentication even for public packages, so use a [personal access token](https://github.com/settings/tokens) with the `read:packages` scope:
+The API is also published to [GitHub Packages](https://github.com/Narehatechi/deltacord-xposed/packages). GitHub Packages requires authentication even for public packages, so use a [personal access token](https://github.com/settings/tokens) with the `read:packages` scope:
 
 ```kotlin
 repositories {
     maven {
-        url = uri("https://maven.pkg.github.com/Narehatechi/undercord-xposed")
+        url = uri("https://maven.pkg.github.com/Narehatechi/deltacord-xposed")
         credentials {
             username = providers.gradleProperty("gpr.user").orNull
             password = providers.gradleProperty("gpr.key").orNull
@@ -87,7 +87,7 @@ repositories {
 }
 
 dependencies {
-    compileOnly("io.github.undercord:api:<version>")
+    compileOnly("io.github.deltacord:api:<version>")
 }
 ```
 

@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "io.github.undercord.api"
+    namespace = "io.github.deltacord.api"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
@@ -46,12 +46,12 @@ dependencies {
 }
 
 // Forks publish to their own repository's packages.
-val githubRepository = providers.environmentVariable("GITHUB_REPOSITORY").getOrElse("Narehatechi/undercord-xposed")
+val githubRepository = providers.environmentVariable("GITHUB_REPOSITORY").getOrElse("Narehatechi/deltacord-xposed")
 
 publishing {
     publications {
         register<MavenPublication>("release") {
-            groupId = "io.github.undercord"
+            groupId = "io.github.deltacord"
             artifactId = "api"
             version = libs.versions.apiVersion.get()
 
@@ -60,8 +60,8 @@ publishing {
             }
 
             pom {
-                name = "Undercord API"
-                description = "API for building native Undercord plugins"
+                name = "Deltacord API"
+                description = "API for building native Deltacord plugins"
                 url = "https://github.com/$githubRepository"
 
                 licenses {
