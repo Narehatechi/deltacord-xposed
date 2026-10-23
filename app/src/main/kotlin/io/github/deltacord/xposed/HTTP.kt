@@ -2,13 +2,16 @@ package io.github.deltacord.xposed
 
 import io.ktor.client.*
 import io.ktor.client.call.*
-import io.ktor.client.engine.cio.*
+import io.ktor.client.engine.android.*
 import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 
+// Android's own HTTP stack. Ktor's CIO engine rejects header lines over 8192 characters, and
+// github.com now sends a ~9200 character Content-Security-Policy on its download redirects,
+// which broke bundle updates, font downloads and plugin repos.
 internal val httpClient by lazy {
-    HttpClient(CIO) {
+    HttpClient(Android) {
         expectSuccess = false
         install(UserAgent) { agent = DeltacordConstants.USER_AGENT }
         install(HttpRedirect) {}
