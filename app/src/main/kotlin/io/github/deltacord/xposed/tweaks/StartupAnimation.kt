@@ -36,7 +36,7 @@ import kotlin.math.min
  *
  * Discord normally holds its logo on screen until it's ready by blocking drawing; while the
  * animation is up that block is lifted (Discord's own check still decides when it's ready), so the
- * animation can be seen. Tapping the animation closes it.
+ * animation can be seen. It can't be skipped: taps are absorbed and do nothing.
  *
  * Turned off by creating `files/pyoncord/startup-animation-off` (Deltacord > Extras does this).
  */
@@ -147,7 +147,6 @@ private object StartupAnimation {
 
         val animation = AnimationView(activity, typeface)
         animation.translationZ = 10_000f
-        animation.setOnClickListener { finish(force = true) }
         decor.addView(animation, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         view = animation
 
@@ -247,7 +246,10 @@ private class AnimationView(context: Context, typeface: Typeface) : View(context
 
     init {
         setBackgroundColor(Color.BLACK)
+        // Absorb taps so they neither skip the animation nor reach Discord underneath.
         isClickable = true
+        isFocusable = true
+        setOnTouchListener { _, _ -> true }
         // Shadow-based glow on text needs a software layer on older Android versions.
         if (android.os.Build.VERSION.SDK_INT < 28) setLayerType(View.LAYER_TYPE_SOFTWARE, null)
     }
