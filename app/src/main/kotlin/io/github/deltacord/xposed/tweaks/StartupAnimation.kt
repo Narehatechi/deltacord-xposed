@@ -31,6 +31,7 @@ import kotlin.math.min
  *
  * In the style of deltarune.com: on black, "DEL", then "TA", then "CORD" glow in, one after the
  * other, in white Determination Mono, as one word running along the long side of the screen.
+ * Then a little "by Narehatechi" spins in near the bottom edge and wobbles.
  * It stays (gently glowing) until Discord has drawn its first screen, then fades away.
  *
  * Discord normally holds its logo on screen until it's ready by blocking drawing; while the
@@ -223,7 +224,11 @@ private class AnimationView(context: Context, typeface: Typeface) : View(context
         /** The whole word pulses brighter once it's complete. */
         private const val PULSE_START = 2100L
         private const val PULSE_LENGTH = 600L
-        const val PLAY_MS = 2700L
+        /** "by Narehatechi" spins in near the bottom edge, then wobbles. */
+        private const val CREDIT = "by Narehatechi"
+        private const val CREDIT_START = 2150L
+        private const val CREDIT_SPIN = 750L
+        const val PLAY_MS = 3200L
     }
 
     private val start = SystemClock.uptimeMillis()
@@ -238,6 +243,7 @@ private class AnimationView(context: Context, typeface: Typeface) : View(context
     }
     private val glow = Paint(core)
     private val halo = Paint(core)
+    private val credit = Paint(core).apply { textAlign = Paint.Align.CENTER }
 
     init {
         setBackgroundColor(Color.BLACK)
@@ -311,6 +317,42 @@ private class AnimationView(context: Context, typeface: Typeface) : View(context
         }
         canvas.restore()
 
+        drawCredit(canvas, t, w, h)
+
         postInvalidateOnAnimation()
+    }
+
+    /** Ease out with a little overshoot, so the spin lands with a bounce. */
+    private fun backOut(x: Float): Float {
+        val c1 = 1.70158f
+        val c3 = c1 + 1
+        val p = x - 1
+        return 1 + c3 * p * p * p + c1 * p * p
+    }
+
+    /** "by Narehatechi": spins in near the bottom (short) edge, then wobbles like a splash text. */
+    private fun drawCredit(canvas: Canvas, t: Long, w: Float, h: Float) {
+        if (t < CREDIT_START) return
+        val spin = ((t - CREDIT_START).toFloat() / CREDIT_SPIN).coerceIn(0f, 1f)
+        val eased = backOut(spin)
+        val since = (t - CREDIT_START).toDouble()
+
+        val scale = max(0f, eased) * (1f + 0.045f * kotlin.math.sin(since / 170.0).toFloat() * spin)
+        val angle = -720f * (1f - eased) + 4f * kotlin.math.sin(since / 320.0).toFloat() * spin
+        if (scale <= 0.01f) return
+
+        credit.textSize = min(w, h) * 0.075f
+        credit.alpha = (255 * spin.coerceAtMost(1f)).toInt().coerceIn(0, 255)
+        credit.setShadowLayer(credit.textSize * 0.35f, 0f, 0f, Color.WHITE)
+
+        val cx = w / 2
+        val cy = h * 0.9f
+        canvas.save()
+        canvas.translate(cx, cy)
+        canvas.rotate(angle)
+        canvas.scale(scale, scale)
+        val metrics = credit.fontMetrics
+        canvas.drawText(CREDIT, 0f, -(metrics.ascent + metrics.descent) / 2, credit)
+        canvas.restore()
     }
 }
