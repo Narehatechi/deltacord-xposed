@@ -17,6 +17,16 @@ internal object StuckReport {
     /** Created by "Open without Deltacord": the next launch skips the Deltacord bundle once. */
     const val SKIP_ONCE_FILE = "skip-bundle-once"
 
+    /** Tells Deltacord (JS) that this launch got stuck, so the next one starts minimal on its own. */
+    fun flagStuckLaunch(dataDir: String) {
+        runCatching {
+            File(dataDir, "${DeltacordConstants.FILES_DIR}/last-launch-stuck").apply {
+                parentFile?.mkdirs()
+                writeText(System.currentTimeMillis().toString())
+            }
+        }
+    }
+
     /** Deltacord's startup record if it was written during this launch, else null. */
     fun thisLaunch(dataDir: String, processStart: Long): JSONObject? = try {
         val record = File(dataDir, "${DeltacordConstants.FILES_DIR}/deltacord-startup.json")

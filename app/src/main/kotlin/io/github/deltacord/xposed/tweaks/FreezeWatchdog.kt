@@ -48,6 +48,7 @@ val freezeWatchdog by tweak {
                         append(StuckReport.build(dataDir, processStart, evenIfReady = true) ?: "")
                     }
                     log.w("UI thread frozen:\n$report")
+                    StuckReport.flagStuckLaunch(dataDir)
                     runCatching {
                         File(dataDir, "${DeltacordConstants.FILES_DIR}/freeze-report.txt").writeText(report)
                     }
