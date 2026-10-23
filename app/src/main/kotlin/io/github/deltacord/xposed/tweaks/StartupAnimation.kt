@@ -136,8 +136,8 @@ private object StartupAnimation {
     private var sawBlockingListener = false
     private val handler = Handler(Looper.getMainLooper())
 
-    /** Never cover Discord for longer than this after the animation has played. */
-    private const val MAX_EXTRA_MS = 12_000L
+    /** After the animation has played, how long to wait for Discord before explaining what's wrong. */
+    private const val MAX_EXTRA_MS = 25_000L
 
     fun gateFor(listener: ViewTreeObserver.OnPreDrawListener): DrawGate =
         synchronized(gates) { gates.getOrPut(listener) { DrawGate(listener) } }
@@ -161,19 +161,20 @@ private object StartupAnimation {
         decor.addView(animation, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         view = animation
         activityRef = WeakReference(activity)
+        shownAtMs = SystemClock.uptimeMillis()
 
         // Check regularly once the animation has played; give up waiting after a while.
         val started = SystemClock.uptimeMillis()
         val check = object : Runnable {
             override fun run() {
                 if (view == null) return
-                maybeFinish()
+                runCatching { maybeFinish() }
                 if (view == null) return
                 val elapsed = SystemClock.uptimeMillis() - started
                 if (elapsed > AnimationView.PLAY_MS + MAX_EXTRA_MS) {
                     val report = runCatching { StuckReport.build(dataDir, processStart) }.getOrNull()
                     if (report == null) {
-                        // Deltacord says Discord opened; its "ready" signal just didn't reach us.
+                        // Deltacord says Discord is ready; the signal just didn't reach us in time.
                         log?.w("Discord didn't report ready in time; closing the startup animation")
                         finish(force = true)
                     } else {
@@ -188,11 +189,25 @@ private object StartupAnimation {
         handler.postDelayed(check, AnimationView.PLAY_MS)
     }
 
+    private var shownAtMs = 0L
+
     private fun maybeFinish() {
         val animation = view ?: return
         if (!animation.played) return
-        // Ready when Discord's own "keep the logo" check lets go, or (if it has none) when its screen has content.
-        if (discordReady || (!sawBlockingListener && hasDiscordContent(animation.rootView))) finish(force = false)
+
+        // Deltacord running: it says when Discord's real screen is up (connected, or the login
+        // screen), so the animation stays over Discord's own loading screen until then.
+        val launch = StuckReport.thisLaunch(dataDir, processStart)
+        if (launch != null) {
+            if (launch.optBoolean("uiReady")) finish(force = false)
+            return
+        }
+
+        // No word from Deltacord this launch (Discord running without it): go by what Discord draws.
+        val sinceShown = SystemClock.uptimeMillis() - shownAtMs
+        if (sinceShown > 8_000 && (discordReady || (!sawBlockingListener && hasDiscordContent(animation.rootView)))) {
+            finish(force = false)
+        }
     }
 
     /**

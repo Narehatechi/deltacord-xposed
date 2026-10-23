@@ -11,11 +11,20 @@ import java.io.File
  *   JS side writes as it goes): its build, the last steps, and the steps that never finished,
  * - what Discord's JavaScript thread is doing right now (busy, waiting, or still loading).
  *
- * Returns null if Deltacord says Discord did open during this launch (nothing is stuck).
+ * Returns null if Deltacord says Discord's screen is up during this launch (nothing is stuck).
  */
 internal object StuckReport {
     /** Created by "Open without Deltacord": the next launch skips the Deltacord bundle once. */
     const val SKIP_ONCE_FILE = "skip-bundle-once"
+
+    /** Deltacord's startup record if it was written during this launch, else null. */
+    fun thisLaunch(dataDir: String, processStart: Long): JSONObject? = try {
+        val record = File(dataDir, "${DeltacordConstants.FILES_DIR}/deltacord-startup.json")
+        if (!record.exists()) null
+        else JSONObject(record.readText()).takeIf { it.optLong("startedAt") >= processStart - 10_000 }
+    } catch (_: Throwable) {
+        null
+    }
 
     fun build(dataDir: String, processStart: Long): String? {
         val out = StringBuilder()
@@ -27,11 +36,16 @@ internal object StuckReport {
             try {
                 val json = JSONObject(record.readText())
                 val thisLaunch = json.optLong("startedAt") >= processStart - 10_000
-                if (thisLaunch && json.optBoolean("opened")) return null
+                if (thisLaunch && json.optBoolean("uiReady")) return null
 
                 out.append("Deltacord ").append(json.optString("version", "?"))
                 if (json.optBoolean("minimal")) out.append(" (minimal startup)")
                 out.append('\n')
+                if (thisLaunch) {
+                    out.append("Deltacord finished starting: ").append(if (json.optBoolean("opened")) "yes" else "no")
+                    out.append(" · plugins started: ").append(if (json.optBoolean("ready")) "yes" else "no")
+                    out.append(" · Discord's screen ready: no\n")
+                }
                 if (!thisLaunch) out.append("This record is from an earlier launch: Deltacord's code didn't start this time.\n")
 
                 val stages = json.optJSONArray("stages")
@@ -48,7 +62,7 @@ internal object StuckReport {
                         }
                     }
                 }
-                out.append("Last steps: ").append(all.takeLast(8).joinToString(" > ").ifEmpty { "none" }).append('\n')
+                out.append("Last steps: ").append(all.takeLast(10).joinToString(" > ").ifEmpty { "none" }).append('\n')
                 out.append("Never finished: ").append(unfinished.joinToString(", ").ifEmpty { "nothing recorded" }).append('\n')
             } catch (e: Throwable) {
                 out.append("Couldn't read the startup record: ${e.message}\n")
