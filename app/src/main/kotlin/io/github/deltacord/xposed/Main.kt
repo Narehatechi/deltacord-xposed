@@ -53,6 +53,7 @@ class Main : IXposedHookLoadPackage, IXposedHookZygoteInit {
         // Consumers
         recoveryCompanion,
         startupAnimation,
+        freezeWatchdog,
         discordDevSupport,
         additionalBridgeMethods,
         fonts,

@@ -26,7 +26,7 @@ internal object StuckReport {
         null
     }
 
-    fun build(dataDir: String, processStart: Long): String? {
+    fun build(dataDir: String, processStart: Long, evenIfReady: Boolean = false): String? {
         val out = StringBuilder()
         val record = File(dataDir, "${DeltacordConstants.FILES_DIR}/deltacord-startup.json")
 
@@ -36,7 +36,7 @@ internal object StuckReport {
             try {
                 val json = JSONObject(record.readText())
                 val thisLaunch = json.optLong("startedAt") >= processStart - 10_000
-                if (thisLaunch && json.optBoolean("uiReady")) return null
+                if (thisLaunch && json.optBoolean("uiReady") && !evenIfReady) return null
 
                 out.append("Deltacord ").append(json.optString("version", "?"))
                 if (json.optBoolean("minimal")) out.append(" (minimal startup)")
@@ -70,6 +70,14 @@ internal object StuckReport {
         }
 
         out.append("\nModule ${DeltacordConstants.LOADER_VERSION} · Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})\n")
+
+        // The UI thread: if it's stuck, nothing on screen can change.
+        try {
+            val main = android.os.Looper.getMainLooper().thread
+            out.append("\nmain (").append(main.state).append("):\n")
+            for (frame in main.stackTrace.take(24)) out.append("  at ").append(frame).append('\n')
+        } catch (_: Throwable) {
+        }
 
         // React Native's threads are named mqt_*; the JavaScript one is mqt_js or mqt_v_js.
         try {
