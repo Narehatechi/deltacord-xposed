@@ -207,18 +207,20 @@ def main():
         "commit", "-m", title, "-m", body_text)
     run("git", "push", "origin", branch)
 
-    pr = run("gh", "pr", "create", "--title", title, "--body", body_text, "--head", branch, check=False)
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    default = run("gh", "api", f"repos/{repo}", "--jq", ".default_branch", check=False).stdout.strip() or "main"
+    pr = run("gh", "api", f"repos/{repo}/pulls", "-f", f"title={title}", "-f", f"body={body_text}",
+             "-f", f"head={branch}", "-f", f"base={default}", "--jq", ".html_url", check=False)
     if pr.returncode == 0:
         print("Opened", pr.stdout.strip())
         return 0
 
     # Repos where Actions may not open pull requests: open an issue with a one-tap link instead.
-    repo = os.environ.get("GITHUB_REPOSITORY", "")
     compare = f"https://github.com/{repo}/compare/main...{branch}?expand=1"
     issue_body = body_text + f"\n\n**Open the pull request:** {compare}\n\n" \
         "(GitHub Actions isn't allowed to open pull requests in this repo. To let it, turn on " \
         "Settings > Actions > General > *Allow GitHub Actions to create and approve pull requests*.)"
-    run("gh", "issue", "create", "--title", title, "--body", issue_body, check=False)
+    run("gh", "api", f"repos/{repo}/issues", "-f", f"title={title}", "-f", f"body={issue_body}", check=False)
     print("Couldn't open a PR; opened an issue with the link instead.", pr.stderr.strip())
     return 0
 
