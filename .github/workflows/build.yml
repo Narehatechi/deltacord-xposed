@@ -62,8 +62,9 @@ jobs:
         env:
           KEYSTORE_FILE: ${{ steps.keystore.outputs.file }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          # Only KEYSTORE and KEYSTORE_PASSWORD are needed; the alias and key password default sensibly.
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS || 'undercord' }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || secrets.KEYSTORE_PASSWORD }}
         run: >-
           ./gradlew
           :app:assembleDebug
