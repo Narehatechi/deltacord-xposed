@@ -4,6 +4,9 @@ import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
@@ -15,12 +18,15 @@ import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
+import android.widget.Toast
+import io.github.deltacord.reloadApp
 import io.github.deltacord.Logger
 import io.github.deltacord.xposed.DeltacordConstants
 import io.github.deltacord.xposed.hook
 import io.github.deltacord.xposed.method
 import io.github.deltacord.xposed.tweak
 import java.io.File
+import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 import java.util.zip.ZipFile
 import kotlin.math.max
@@ -48,6 +54,7 @@ val startupAnimation by tweak {
     }
 
     StartupAnimation.log = log
+    StartupAnimation.dataDir = dataDir
     StartupAnimation.fontFile = extractFont(modulePath, dataDir, log)
     StartupAnimation.waitingForDiscord = true
 
@@ -118,6 +125,10 @@ private object StartupAnimation {
 
     var log: Logger? = null
     var fontFile: File? = null
+    var dataDir = ""
+    private val processStart = System.currentTimeMillis()
+    private var activityRef: WeakReference<Activity>? = null
+    private var dialog: AlertDialog? = null
 
     private val gates = WeakHashMap<ViewTreeObserver.OnPreDrawListener, DrawGate>()
     private var view: AnimationView? = null
@@ -149,20 +160,29 @@ private object StartupAnimation {
         animation.translationZ = 10_000f
         decor.addView(animation, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         view = animation
+        activityRef = WeakReference(activity)
 
         // Check regularly once the animation has played; give up waiting after a while.
         val started = SystemClock.uptimeMillis()
         val check = object : Runnable {
             override fun run() {
                 if (view == null) return
+                maybeFinish()
+                if (view == null) return
                 val elapsed = SystemClock.uptimeMillis() - started
                 if (elapsed > AnimationView.PLAY_MS + MAX_EXTRA_MS) {
-                    log?.w("Discord didn't report ready in time; closing the startup animation")
-                    finish(force = true)
+                    val report = runCatching { StuckReport.build(dataDir, processStart) }.getOrNull()
+                    if (report == null) {
+                        // Deltacord says Discord opened; its "ready" signal just didn't reach us.
+                        log?.w("Discord didn't report ready in time; closing the startup animation")
+                        finish(force = true)
+                    } else {
+                        log?.w("Discord is stuck starting:\n$report")
+                        showStuckReport(report, this)
+                    }
                     return
                 }
-                maybeFinish()
-                if (view != null) handler.postDelayed(this, 200)
+                handler.postDelayed(this, 200)
             }
         }
         handler.postDelayed(check, AnimationView.PLAY_MS)
@@ -175,7 +195,47 @@ private object StartupAnimation {
         if (discordReady || (!sawBlockingListener && hasDiscordContent(animation.rootView))) finish(force = false)
     }
 
+    /**
+     * Discord hasn't opened long after the animation: explain what's going on instead of sitting on
+     * a black screen, with a report to copy and a way into Discord without Deltacord.
+     */
+    private fun showStuckReport(report: String, check: Runnable) {
+        val activity = activityRef?.get() ?: return finish(force = true)
+        if (dialog?.isShowing == true) return
+        try {
+            dialog = AlertDialog.Builder(activity)
+                .setTitle("Deltacord is stuck starting")
+                .setMessage("Discord hasn't opened. Copy this report and send it so it can be fixed.\n\n$report")
+                .setCancelable(false)
+                .setPositiveButton("Copy report") { _, _ ->
+                    runCatching {
+                        val clipboard = activity.getSystemService(ClipboardManager::class.java)
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Deltacord report", report))
+                        Toast.makeText(activity, "Report copied", Toast.LENGTH_SHORT).show()
+                    }
+                    // Ask again in a bit, in case it's still stuck.
+                    handler.postDelayed(check, 1500)
+                }
+                .setNegativeButton("Open without Deltacord") { _, _ ->
+                    runCatching {
+                        File(dataDir, "${DeltacordConstants.FILES_DIR}/${StuckReport.SKIP_ONCE_FILE}").apply {
+                            parentFile?.mkdirs()
+                            writeText("1")
+                        }
+                    }
+                    reloadApp()
+                }
+                .setNeutralButton("Keep waiting") { _, _ -> handler.postDelayed(check, 20_000) }
+                .show()
+        } catch (e: Throwable) {
+            log?.e("Couldn't show the stuck report", e)
+            finish(force = true)
+        }
+    }
+
     private fun finish(force: Boolean) {
+        runCatching { dialog?.dismiss() }
+        dialog = null
         val animation = view ?: return
         view = null
         waitingForDiscord = false

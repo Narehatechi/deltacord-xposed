@@ -42,6 +42,14 @@ private fun runDeltacordScripts(scope: InjectorScope, preloadsDir: File, mainScr
         }
     }
 
+    // "Open without Deltacord" from the stuck-startup report: skip the bundle for this one launch.
+    val skipOnce = File(preloadsDir.parentFile, StuckReport.SKIP_ONCE_FILE)
+    if (skipOnce.exists()) {
+        skipOnce.delete()
+        log.w("Skipping the Deltacord bundle for this launch, as asked")
+        return
+    }
+
     try {
         preloadsDir.walk().filter { it.isFile }.sorted().forEach { f ->
             log.d("Running preload: ${f.absolutePath}")
