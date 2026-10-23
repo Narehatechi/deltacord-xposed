@@ -273,7 +273,7 @@ private class AnimationView(context: Context, typeface: Typeface) : View(context
 
         // Size the word to fill most of the long side, without getting too tall for the short side.
         core.textSize = 100f
-        val sizeForLength = 100f * (along * 0.84f) / core.measureText(WORD)
+        val sizeForLength = 100f * (along * 0.80f) / core.measureText(WORD)
         val sizeForHeight = across * 0.42f
         val size = min(sizeForLength, sizeForHeight)
         core.textSize = size
@@ -346,7 +346,7 @@ private class AnimationView(context: Context, typeface: Typeface) : View(context
         credit.setShadowLayer(credit.textSize * 0.35f, 0f, 0f, Color.WHITE)
 
         val cx = w / 2
-        val cy = h * 0.9f
+        val cy = h * 0.955f
         canvas.save()
         canvas.translate(cx, cy)
         canvas.rotate(angle)
