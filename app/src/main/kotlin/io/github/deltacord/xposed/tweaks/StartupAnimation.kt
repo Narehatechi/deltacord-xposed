@@ -168,6 +168,7 @@ private object StartupAnimation {
         val check = object : Runnable {
             override fun run() {
                 if (view == null) return
+                runCatching { updateProgress() }
                 runCatching { maybeFinish() }
                 if (view == null) return
                 val elapsed = SystemClock.uptimeMillis() - started
@@ -187,7 +188,55 @@ private object StartupAnimation {
                 handler.postDelayed(this, 200)
             }
         }
-        handler.postDelayed(check, AnimationView.PLAY_MS)
+        handler.postDelayed(check, 200)
+    }
+
+    /** Turns Deltacord's startup record into the progress bar and the line under it. */
+    private fun updateProgress() {
+        val animation = view ?: return
+        val launch = StuckReport.thisLaunch(dataDir, processStart)
+        if (launch == null) {
+            animation.targetProgress = 0.08f
+            animation.status = "Loading Deltacord…"
+            return
+        }
+
+        val build = launch.optString("version").substringBefore("-")
+        val stages = launch.optJSONArray("stages")
+        val names = ArrayList<String>()
+        if (stages != null) for (i in 0 until stages.length()) names.add(stages.optJSONObject(i)?.optString("name") ?: continue)
+
+        val started = LinkedHashSet<String>()
+        var stepsDone = 0
+        for (name in names) {
+            when {
+                name.startsWith("start: ") -> started.add(name.removePrefix("start: "))
+                name.startsWith("done: ") -> if (started.remove(name.removePrefix("done: "))) stepsDone++
+            }
+        }
+        val pending = started.lastOrNull()
+        val last = names.lastOrNull() ?: ""
+
+        val (progress, text) = when {
+            launch.optBoolean("uiReady") -> 1f to "Ready!"
+            launch.optBoolean("opened") -> {
+                val plugin = started.lastOrNull { it.startsWith("plugin ") }?.removePrefix("plugin ")
+                (if (launch.optBoolean("ready")) 0.93f else 0.85f) to
+                    (if (plugin != null) "Starting plugin: $plugin" else "Waiting for Discord…")
+            }
+            last.startsWith("reading Discord") -> 0.18f to "Reading Discord…"
+            last.startsWith("loading Deltacord") -> 0.28f to "Loading Deltacord…"
+            last.startsWith("failed") -> 0.7f to "Problem starting: ${last.removePrefix("failed: ").take(40)}"
+            names.any { it == "setting up" } -> (0.35f + 0.42f * (stepsDone / 13f).coerceAtMost(1f)) to
+                (if (pending != null) "Setting up: $pending" else "Setting up…")
+            else -> 0.12f to "Starting Deltacord…"
+        }
+        animation.targetProgress = max(animation.targetProgress, progress)
+        animation.status = buildString {
+            append(text)
+            if (launch.optBoolean("minimal")) append(" (safe start)")
+            if (build.isNotEmpty()) append("  ·  ").append(build)
+        }
     }
 
     private var shownAtMs = 0L
@@ -310,6 +359,13 @@ private class AnimationView(context: Context, typeface: Typeface) : View(context
     var played = false
         private set
 
+    /** Startup progress, 0..1, and what's happening (set from the startup record). */
+    @Volatile
+    var targetProgress = 0.03f
+    @Volatile
+    var status = "Starting…"
+    private var shownProgress = 0f
+
     private val density = resources.displayMetrics.density
     private val core = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         this.typeface = typeface
@@ -319,6 +375,9 @@ private class AnimationView(context: Context, typeface: Typeface) : View(context
     private val glow = Paint(core)
     private val halo = Paint(core)
     private val credit = Paint(core).apply { textAlign = Paint.Align.CENTER }
+    private val barLine = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; style = Paint.Style.STROKE }
+    private val barFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; style = Paint.Style.FILL }
+    private val label = Paint(core)
 
     init {
         setBackgroundColor(Color.BLACK)
@@ -393,11 +452,47 @@ private class AnimationView(context: Context, typeface: Typeface) : View(context
             }
             x += core.measureText(part)
         }
+
+        drawProgress(canvas, t, x0, wordWidth, baseline, size)
         canvas.restore()
 
         drawCredit(canvas, t, w, h)
 
         postInvalidateOnAnimation()
+    }
+
+    /**
+     * The progress bar under the word (in the same turned direction): an outlined bar that fills as
+     * Deltacord and Discord start, with what's happening written underneath.
+     */
+    private fun drawProgress(canvas: Canvas, t: Long, x0: Float, wordWidth: Float, baseline: Float, size: Float) {
+        val appear = fade(t, PART_START[0], PART_FADE)
+        if (appear <= 0f) return
+
+        // Ease towards the real progress so the bar glides instead of jumping.
+        shownProgress += (targetProgress - shownProgress) * 0.08f
+        if (targetProgress >= 1f && shownProgress > 0.995f) shownProgress = 1f
+
+        val barHeight = size * 0.11f
+        val top = baseline + size * 0.22f
+        val stroke = max(density * 2f, barHeight * 0.16f)
+        val inset = stroke * 1.8f
+
+        barLine.strokeWidth = stroke
+        barLine.alpha = (230 * appear).toInt()
+        barLine.setShadowLayer(stroke * 3, 0f, 0f, Color.WHITE)
+        canvas.drawRect(x0, top, x0 + wordWidth, top + barHeight, barLine)
+
+        val innerWidth = (wordWidth - inset * 2) * shownProgress.coerceIn(0f, 1f)
+        if (innerWidth > 0f) {
+            barFill.alpha = (255 * appear).toInt()
+            barFill.setShadowLayer(barHeight * 0.6f, 0f, 0f, Color.WHITE)
+            canvas.drawRect(x0 + inset, top + inset, x0 + inset + innerWidth, top + barHeight - inset, barFill)
+        }
+
+        label.textSize = size * 0.15f
+        label.alpha = (200 * appear).toInt()
+        canvas.drawText(status, x0, top + barHeight + label.textSize * 1.35f, label)
     }
 
     /** Ease out with a little overshoot, so the spin lands with a bounce. */
