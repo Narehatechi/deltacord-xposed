@@ -53,14 +53,18 @@ val fonts by tweak {
     withAppContext { ctx ->
         val dataDir = ctx.dataDir.absolutePath
         val fontDefFile = File(dataDir, "${DeltacordConstants.FILES_DIR}/fonts.json").apply { ensureFile() }
-        if (!fontDefFile.exists()) return@withAppContext
 
-        val fontDef = try {
+        val chosen = if (!fontDefFile.exists()) null else try {
             DeltacordJson.decodeFromString<FontDefinition>(fontDefFile.readText())
         } catch (e: Throwable) {
             log.w("fonts.json malformed: ${e.message}")
-            return@withAppContext
+            null
         }
+        // Deltacord's own themes come with Determination: use it from the very first frame, even
+        // before Deltacord has written fonts.json (unless it's turned off in Extras).
+        val fontDef: FontDefinition = chosen?.takeIf { it.name != null }
+            ?: (if (DeterminationFont.wantedByTheme(dataDir)) DeterminationFont.definition() else null)
+            ?: return@withAppContext
         val setName = fontDef.name ?: return@withAppContext
 
         val downloadsDir = File(dataDir, "${DeltacordConstants.FILES_DIR}/downloads/fonts").apply { ensureDir() }
@@ -80,8 +84,14 @@ val fonts by tweak {
             }
         }
 
+        // Determination is built into this module: put it in place right away instead of
+        // downloading it, so the font is there as Discord starts.
+        val pending = fontDef.main.filter { (name, url) ->
+            !(DeterminationFont.isDeterminationUrl(url) && DeterminationFont.install(modulePath, File(setDir, "$name.ttf"), log))
+        }
+
         CoroutineScope(Dispatchers.IO).launch {
-            fontDef.main.entries.map { (name, url) ->
+            pending.entries.map { (name, url) ->
                 async {
                     try {
                         log.i("Downloading $name from $url")
@@ -205,5 +215,50 @@ private object FontsState {
         val fallbackBuilder = CustomFallbackBuilder(fontFamilies[0])
         for (i in 1 until fontFamilies.size) fallbackBuilder.addCustomFallback(fontFamilies[i])
         return fallbackBuilder.build()
+    }
+}
+
+
+/** Determination Mono, shipped in this module (assets/fonts), for Deltacord's built-in themes. */
+private object DeterminationFont {
+    private const val ASSET = "assets/fonts/DeterminationMono.ttf"
+    private const val URL = "https://raw.githubusercontent.com/Narehatechi/deltacord-bundle/main/themes/fonts/DeterminationMono.ttf"
+
+    /** The font keys Deltacord's themes replace (Discord's main, heading and code fonts). */
+    private val KEYS = listOf(
+        "ggsans-Normal", "ggsans-Medium", "ggsans-Semibold", "ggsans-Bold", "ggsans-ExtraBold",
+        "ggsans-NormalItalic", "ggsans-MediumItalic", "ggsans-SemiboldItalic", "ggsans-BoldItalic", "ggsans-ExtraBoldItalic",
+        "ggmono-Normal", "ggmono-Bold",
+        "ABCGintoNord-ExtraBold",
+    )
+
+    fun definition() = FontDefinition(name = "Determination", spec = 1, main = KEYS.associateWith { URL })
+
+    fun isDeterminationUrl(url: String) = url.endsWith("/DeterminationMono.ttf")
+
+    /** A Deltacord built-in theme is on and "Determination font with Deltacord's themes" isn't off. */
+    fun wantedByTheme(dataDir: String): Boolean = try {
+        val theme = File(dataDir, "${DeltacordConstants.FILES_DIR}/current-theme.json")
+        val builtin = theme.exists() && org.json.JSONObject(theme.readText()).optString("id").startsWith("deltacord://builtin/")
+        val extras = File(dataDir, "files/vd_mmkv/DELTACORD_EXTRAS")
+        val enabled = !extras.exists() || org.json.JSONObject(extras.readText()).optBoolean("themeFont", true)
+        builtin && enabled
+    } catch (_: Throwable) {
+        false
+    }
+
+    /** Copies the built-in font to [target] if it isn't there yet. True if it's in place. */
+    fun install(modulePath: String, target: File, log: Logger): Boolean = try {
+        if (!target.exists() || target.length() == 0L) {
+            java.util.zip.ZipFile(modulePath).use { zip ->
+                val entry = zip.getEntry(ASSET) ?: error("font missing from module")
+                target.parentFile?.mkdirs()
+                zip.getInputStream(entry).use { input -> target.outputStream().use { input.copyTo(it) } }
+            }
+        }
+        true
+    } catch (e: Throwable) {
+        log.w("Couldn't use the built-in Determination font; downloading it instead", e)
+        false
     }
 }
