@@ -4,6 +4,7 @@ import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.Instrumentation
 import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -22,7 +23,9 @@ import android.widget.Toast
 import io.github.deltacord.reloadApp
 import io.github.deltacord.Logger
 import io.github.deltacord.xposed.DeltacordConstants
+import de.robv.android.xposed.XposedBridge
 import io.github.deltacord.xposed.hook
+import io.github.deltacord.xposed.methodHook
 import io.github.deltacord.xposed.method
 import io.github.deltacord.xposed.tweak
 import java.io.File
@@ -62,8 +65,9 @@ val startupAnimation by tweak {
     ViewTreeObserver::class.java.method("addOnPreDrawListener", ViewTreeObserver.OnPreDrawListener::class.java).hook {
         before {
             val listener = args[0] as? ViewTreeObserver.OnPreDrawListener ?: return@before
-            if (listener is DrawGate || !StartupAnimation.waitingForDiscord) return@before
-            args[0] = StartupAnimation.gateFor(listener)
+            if (listener is DrawGate) return@before
+            if (!StartupAnimation.waitingForDiscord && !StartupAnimation.creatingLauncher) return@before
+            args[0] = StartupAnimation.gateFor(listener, fromLauncherCreate = StartupAnimation.creatingLauncher)
         }
     }
     ViewTreeObserver::class.java.method("removeOnPreDrawListener", ViewTreeObserver.OnPreDrawListener::class.java).hook {
@@ -72,6 +76,23 @@ val startupAnimation by tweak {
             StartupAnimation.existingGate(listener)?.let { args[0] = it }
         }
     }
+
+    // Discord can recreate its screen while starting (for example on a theme change). Follow it, so
+    // the animation and the stuck report move to the new screen, and a stale "keep the logo"
+    // hold on it can't block Discord once it has started.
+    XposedBridge.hookAllMethods(Instrumentation::class.java, "callActivityOnCreate", methodHook {
+        before {
+            val activity = args[0] as? Activity ?: return@before
+            if (StartupAnimation.isLauncher(activity)) StartupAnimation.creatingLauncher = true
+        }
+        after {
+            val activity = args[0] as? Activity ?: return@after
+            if (!StartupAnimation.isLauncher(activity)) return@after
+            StartupAnimation.creatingLauncher = false
+            runCatching { StartupAnimation.onLauncherCreated(activity) }
+                .onFailure { log.e("Couldn't follow the recreated screen", it) }
+        }
+    }.build())
 
     withAppActivity { activity ->
         activity.runOnUiThread {
@@ -102,7 +123,11 @@ private fun extractFont(modulePath: String, dataDir: String, log: Logger): File?
 }
 
 /** Wraps a pre-draw listener so that, while the animation is up, it can't stop the window drawing. */
-private class DrawGate(val original: ViewTreeObserver.OnPreDrawListener) : ViewTreeObserver.OnPreDrawListener {
+private class DrawGate(
+    val original: ViewTreeObserver.OnPreDrawListener,
+    /** Added while Discord's main screen was being created (where its launch-logo hold lives). */
+    val fromLauncherCreate: Boolean,
+) : ViewTreeObserver.OnPreDrawListener {
     var blocked = false
 
     override fun onPreDraw(): Boolean {
@@ -111,6 +136,8 @@ private class DrawGate(val original: ViewTreeObserver.OnPreDrawListener) : ViewT
             blocked = true
             // Discord still wants its logo. Draw anyway while the animation covers the screen.
             if (StartupAnimation.waitingForDiscord) return true
+            // A recreated screen waiting for a "ready" Discord already sent: don't hold it forever.
+            if (fromLauncherCreate && StartupAnimation.discordStarted) return true
         } else if (blocked) {
             blocked = false
             StartupAnimation.onDiscordReady()
@@ -130,6 +157,42 @@ private object StartupAnimation {
     private var activityRef: WeakReference<Activity>? = null
     private var dialog: AlertDialog? = null
 
+    /** Deltacord said Discord opened during this launch (so a later logo hold is stale). */
+    @Volatile
+    var discordStarted = false
+
+    @Volatile
+    var creatingLauncher = false
+
+    private var launcherClass: String? = null
+
+    fun isLauncher(activity: Activity) = launcherClass != null && activity.javaClass.name == launcherClass
+
+    /** Discord's main screen was created again: carry the animation (if still up) over to it. */
+    fun onLauncherCreated(activity: Activity) {
+        val old = activityRef?.get()
+        if (old === activity) return
+        log?.i("Discord recreated its screen")
+        activityRef = WeakReference(activity)
+        runCatching { dialog?.dismiss() }
+        dialog = null
+
+        val current = view ?: return
+        val typeface = current.typeface
+        val moved = AnimationView(activity, typeface, startOffsetMs = AnimationView.PLAY_MS).apply {
+            targetProgress = current.targetProgress
+            status = current.status
+            translationZ = 10_000f
+        }
+        (current.parent as? ViewGroup)?.removeView(current)
+        activity.window.decorView.post {
+            (activity.window?.decorView as? ViewGroup)?.addView(
+                moved, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
+            )
+        }
+        view = moved
+    }
+
     private val gates = WeakHashMap<ViewTreeObserver.OnPreDrawListener, DrawGate>()
     private var view: AnimationView? = null
     private var discordReady = false
@@ -139,8 +202,8 @@ private object StartupAnimation {
     /** After the animation has played, how long to wait for Discord before explaining what's wrong. */
     private const val MAX_EXTRA_MS = 25_000L
 
-    fun gateFor(listener: ViewTreeObserver.OnPreDrawListener): DrawGate =
-        synchronized(gates) { gates.getOrPut(listener) { DrawGate(listener) } }
+    fun gateFor(listener: ViewTreeObserver.OnPreDrawListener, fromLauncherCreate: Boolean): DrawGate =
+        synchronized(gates) { gates.getOrPut(listener) { DrawGate(listener, fromLauncherCreate) } }
 
     fun existingGate(listener: ViewTreeObserver.OnPreDrawListener): DrawGate? =
         synchronized(gates) { gates[listener] }
@@ -156,6 +219,7 @@ private object StartupAnimation {
         val typeface = fontFile?.let { runCatching { Typeface.createFromFile(it) }.getOrNull() }
             ?: Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
 
+        launcherClass = activity.javaClass.name
         val animation = AnimationView(activity, typeface)
         animation.translationZ = 10_000f
         decor.addView(animation, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -201,6 +265,7 @@ private object StartupAnimation {
             return
         }
 
+        if (launch.optBoolean("opened")) discordStarted = true
         val build = launch.optString("version").substringBefore("-")
         val stages = launch.optJSONArray("stages")
         val names = ArrayList<String>()
@@ -337,7 +402,12 @@ private object StartupAnimation {
  * The word runs along the long side of the screen (turned 90 degrees).
  */
 @SuppressLint("ViewConstructor")
-private class AnimationView(context: Context, typeface: Typeface) : View(context) {
+private class AnimationView(
+    context: Context,
+    val typeface: Typeface,
+    /** Skip ahead (used when moving to a recreated screen, so the word doesn't replay). */
+    startOffsetMs: Long = 0,
+) : View(context) {
     companion object {
         private val PARTS = arrayOf("DEL", "TA", "CORD")
         private const val WORD = "DELTACORD"
@@ -355,7 +425,7 @@ private class AnimationView(context: Context, typeface: Typeface) : View(context
         const val PLAY_MS = 3200L
     }
 
-    private val start = SystemClock.uptimeMillis()
+    private val start = SystemClock.uptimeMillis() - startOffsetMs
     var played = false
         private set
 
