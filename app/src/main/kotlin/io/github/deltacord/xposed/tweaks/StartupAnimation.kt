@@ -323,7 +323,7 @@ private object StartupAnimation {
         try {
             dialog = AlertDialog.Builder(activity)
                 .setTitle("Deltacord is stuck starting")
-                .setMessage("Discord hasn't opened. Next time Deltacord will start without its extras so Discord can open. Copy this report and send it so it can be fixed.\n\n$report")
+                .setMessage("Discord hasn't opened. Copy this report and send it so it can be fixed.\n\n$report")
                 .setCancelable(false)
                 .setPositiveButton("Copy report") { _, _ ->
                     runCatching {
