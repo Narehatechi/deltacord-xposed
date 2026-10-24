@@ -465,18 +465,15 @@ private class AnimationView(
         canvas.translate((w - along) / 2, (h - across) / 2)
 
         // Size the word to fill most of the long side, without getting too tall for the short side.
-        core.textSize = 100f
-        val sizeForLength = 100f * (along * 0.80f) / core.measureText(WORD)
+        // Drawn from Determination's letter outlines (DeterminationGlyphs), not a loaded font.
+        val sizeForLength = (along * 0.80f) / DeterminationGlyphs.width(WORD, 1f)
         val sizeForHeight = across * 0.42f
         val size = min(sizeForLength, sizeForHeight)
-        core.textSize = size
-        glow.textSize = size
-        halo.textSize = size
 
-        val wordWidth = core.measureText(WORD)
-        val metrics = core.fontMetrics
+        val wordWidth = DeterminationGlyphs.width(WORD, size)
         val x0 = (along - wordWidth) / 2
-        val baseline = across / 2 - (metrics.ascent + metrics.descent) / 2
+        // Capitals are 1152 units tall (of 2048): centre them.
+        val baseline = across / 2 + size * (1152f / DeterminationGlyphs.UNITS_PER_EM) / 2
 
         // A brighter pulse once the word is complete, then a slow breath while Discord finishes starting.
         val pulse = if (t in PULSE_START until PULSE_START + PULSE_LENGTH) {
@@ -497,16 +494,16 @@ private class AnimationView(
 
                 halo.alpha = (90 * appear * glowAmount).toInt().coerceIn(0, 255)
                 halo.setShadowLayer(size * 0.38f + density * 6, 0f, 0f, Color.WHITE)
-                canvas.drawText(part, x, baseline, halo)
+                drawWord(canvas, part, x, baseline, size, halo)
 
                 glow.alpha = (170 * appear * glowAmount).toInt().coerceIn(0, 255)
                 glow.setShadowLayer(size * 0.12f + density * 2, 0f, 0f, Color.WHITE)
-                canvas.drawText(part, x, baseline, glow)
+                drawWord(canvas, part, x, baseline, size, glow)
 
                 core.alpha = (255 * appear).toInt()
-                canvas.drawText(part, x, baseline, core)
+                drawWord(canvas, part, x, baseline, size, core)
             }
-            x += core.measureText(part)
+            x += DeterminationGlyphs.width(part, size)
         }
 
         canvas.restore()
@@ -514,6 +511,13 @@ private class AnimationView(
         drawCredit(canvas, t, w, h)
 
         postInvalidateOnAnimation()
+    }
+
+    private fun drawWord(canvas: Canvas, text: String, x: Float, baseline: Float, size: Float, paint: Paint) {
+        canvas.save()
+        canvas.translate(x, baseline)
+        canvas.drawPath(DeterminationGlyphs.path(text, size), paint)
+        canvas.restore()
     }
 
     /** Ease out with a little overshoot, so the spin lands with a bounce. */
@@ -545,8 +549,8 @@ private class AnimationView(
         canvas.translate(cx, cy)
         canvas.rotate(angle)
         canvas.scale(scale, scale)
-        val metrics = credit.fontMetrics
-        canvas.drawText(CREDIT, 0f, -(metrics.ascent + metrics.descent) / 2, credit)
+        // Centred on the x-height-ish middle of the letters.
+        drawWord(canvas, CREDIT, -DeterminationGlyphs.width(CREDIT, credit.textSize) / 2, credit.textSize * 0.28f, credit.textSize, credit)
         canvas.restore()
     }
 }
