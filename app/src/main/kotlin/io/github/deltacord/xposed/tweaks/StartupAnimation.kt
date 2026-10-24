@@ -57,6 +57,7 @@ val startupAnimation by tweak {
 
     StartupAnimation.log = log
     StartupAnimation.dataDir = dataDir
+    BuiltinFont.dataDir = dataDir
     StartupAnimation.modulePath = modulePath
     StartupAnimation.waitingForDiscord = true
 
@@ -433,9 +434,6 @@ private class AnimationView(
     private val glow = Paint(core)
     private val halo = Paint(core)
     private val credit = Paint(core).apply { textAlign = Paint.Align.CENTER }
-    private val barLine = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; style = Paint.Style.STROKE }
-    private val barFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; style = Paint.Style.FILL }
-    private val label = Paint(core)
 
     init {
         setBackgroundColor(Color.BLACK)
@@ -511,7 +509,6 @@ private class AnimationView(
             x += core.measureText(part)
         }
 
-        drawProgress(canvas, t, x0, wordWidth, baseline, size)
         canvas.restore()
 
         drawCredit(canvas, t, w, h)
@@ -519,49 +516,6 @@ private class AnimationView(
         postInvalidateOnAnimation()
     }
 
-    /**
-     * The progress bar under the word (in the same turned direction): an outlined bar that fills as
-     * Deltacord and Discord start, with what's happening written underneath.
-     */
-    private fun drawProgress(canvas: Canvas, t: Long, x0: Float, wordWidth: Float, baseline: Float, size: Float) {
-        val appear = fade(t, PART_START[0], PART_FADE)
-        if (appear <= 0f) return
-
-        // Ease towards the real progress so the bar glides instead of jumping.
-        shownProgress += (targetProgress - shownProgress) * 0.08f
-        if (targetProgress >= 1f && shownProgress > 0.995f) shownProgress = 1f
-
-        val barHeight = size * 0.11f
-        val top = baseline + size * 0.22f
-        val stroke = max(density * 2f, barHeight * 0.16f)
-        val inset = stroke * 1.8f
-
-        barLine.strokeWidth = stroke
-        barLine.alpha = (230 * appear).toInt()
-        barLine.setShadowLayer(stroke * 3, 0f, 0f, Color.WHITE)
-        canvas.drawRect(x0, top, x0 + wordWidth, top + barHeight, barLine)
-
-        val innerWidth = (wordWidth - inset * 2) * shownProgress.coerceIn(0f, 1f)
-        if (innerWidth > 0f) {
-            barFill.alpha = (255 * appear).toInt()
-            barFill.setShadowLayer(barHeight * 0.6f, 0f, 0f, Color.WHITE)
-            canvas.drawRect(x0 + inset, top + inset, x0 + inset + innerWidth, top + barHeight - inset, barFill)
-        }
-
-        label.textSize = size * 0.15f
-        label.alpha = (200 * appear).toInt()
-        canvas.drawText(status, x0, top + barHeight + label.textSize * 1.35f, label)
-    }
-
-    /** Ease out with a little overshoot, so the spin lands with a bounce. */
-    private fun backOut(x: Float): Float {
-        val c1 = 1.70158f
-        val c3 = c1 + 1
-        val p = x - 1
-        return 1 + c3 * p * p * p + c1 * p * p
-    }
-
-    /** "by Narehatechi": spins in near the bottom (short) edge, then wobbles like a splash text. */
     private fun drawCredit(canvas: Canvas, t: Long, w: Float, h: Float) {
         if (t < CREDIT_START) return
         val spin = ((t - CREDIT_START).toFloat() / CREDIT_SPIN).coerceIn(0f, 1f)

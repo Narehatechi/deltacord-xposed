@@ -238,7 +238,6 @@ private object FontsState {
 
 /** Determination Mono, shipped in this module (assets/fonts), for Deltacord's built-in themes. */
 private object DeterminationFont {
-    private const val ASSET = "assets/fonts/DeterminationMono.ttf"
     private const val URL = "https://raw.githubusercontent.com/Narehatechi/deltacord-bundle/main/themes/fonts/DeterminationMono.ttf"
 
     /** The font keys Deltacord's themes replace (Discord's main, heading and code fonts). */
@@ -267,11 +266,9 @@ private object DeterminationFont {
     /** Copies the built-in font to [target] if it isn't there yet. True if it's in place. */
     fun install(modulePath: String, target: File, log: Logger): Boolean = try {
         if (!target.exists() || target.length() == 0L) {
-            java.util.zip.ZipFile(modulePath).use { zip ->
-                val entry = zip.getEntry(ASSET) ?: error("font missing from module")
-                target.parentFile?.mkdirs()
-                zip.getInputStream(entry).use { input -> target.outputStream().use { input.copyTo(it) } }
-            }
+            val bytes = io.github.deltacord.xposed.tweaks.BuiltinFont.fontBytes(modulePath)
+            target.parentFile?.mkdirs()
+            target.writeBytes(bytes)
         }
         true
     } catch (e: Throwable) {
