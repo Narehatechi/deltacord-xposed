@@ -516,6 +516,15 @@ private class AnimationView(
         postInvalidateOnAnimation()
     }
 
+    /** Ease out with a little overshoot, so the spin lands with a bounce. */
+    private fun backOut(x: Float): Float {
+        val c1 = 1.70158f
+        val c3 = c1 + 1
+        val p = x - 1
+        return 1 + c3 * p * p * p + c1 * p * p
+    }
+
+    /** "by Narehatechi": spins in near the bottom (short) edge, then wobbles like a splash text. */
     private fun drawCredit(canvas: Canvas, t: Long, w: Float, h: Float) {
         if (t < CREDIT_START) return
         val spin = ((t - CREDIT_START).toFloat() / CREDIT_SPIN).coerceIn(0f, 1f)
