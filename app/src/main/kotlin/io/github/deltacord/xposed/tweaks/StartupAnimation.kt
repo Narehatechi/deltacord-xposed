@@ -183,7 +183,7 @@ private object StartupAnimation {
     private val handler = Handler(Looper.getMainLooper())
 
     /** After the animation has played, how long to wait for Discord before explaining what's wrong. */
-    private const val MAX_EXTRA_MS = 25_000L
+    private const val MAX_EXTRA_MS = 15_000L
 
     fun gateFor(listener: ViewTreeObserver.OnPreDrawListener, fromLauncherCreate: Boolean): DrawGate =
         synchronized(gates) { gates.getOrPut(listener) { DrawGate(listener, fromLauncherCreate) } }
@@ -221,6 +221,9 @@ private object StartupAnimation {
                 runCatching { maybeFinish() }
                 if (view == null) return
                 val elapsed = SystemClock.uptimeMillis() - started
+                val left = (AnimationView.PLAY_MS + MAX_EXTRA_MS - elapsed + 999) / 1000
+                // Say when the stuck report will show, so it's clear something is coming.
+                if (left in 1..10) view?.let { it.status = it.status.substringBefore("  ·  report in") + "  ·  report in ${left}s" }
                 if (elapsed > AnimationView.PLAY_MS + MAX_EXTRA_MS) {
                     val report = runCatching { StuckReport.build(dataDir, processStart) }.getOrNull()
                     if (report == null) {
