@@ -171,6 +171,8 @@ internal data class PlannedAction(
     val dependents: Map<String, PlanDependent> = emptyMap(),
     /** Versions satisfying planned dependents keyed by repository with metadata. */
     val candidates: Map<String, Map<String, VersionCandidate>> = emptyMap(),
+    /** What [channel] points to when it can't resolve and [version] fell back below it. */
+    val channelVersion: Version? = null,
 )
 
 /** A version a planned plugin could switch to. */
@@ -192,8 +194,10 @@ internal data class PlanTarget(
     val repo: String? = null,
     /** Exact version, held once installed. Overrides [channel]. */
     val version: String? = null,
-    /** Channel to follow. `null` = the installed plugin's channel, or [REPO_CHANNEL_LATEST]. */
+    /** Channel to follow. `null` = the installed plugin's channel, or [REPO_CHANNEL_LATEST]. Strict unless [compatible]. */
     val channel: String? = null,
+    /** Lets [channel] fall back to the newest older version that resolves when what it points to can't. */
+    val compatible: Boolean = false,
 )
 
 /** A request to install (or update/downgrade) one root plugin. */
@@ -216,14 +220,19 @@ internal class PluginSystemResolveException(val issue: ResolveIssue) :
  *   New plugins resolve from the first repository that serves them. A [PlanTarget]'s repository overrides all.
  * - Dependency ranges are checked with [VersionRange.satisfies], targeted versions included.
  * - Root: exact targeted version > channel pointer > newest non-labeled version > newest version.
+ *   Unless it's an exact version or a strict channel target, a choice whose own required dependencies can't resolve
+ *   falls back to the newest older version that can. Falling below a pointer sets [PlannedAction.channelVersion].
  * - Dependencies: exact targeted version > targeted channel pointer > newest non-labeled satisfying version.
+ *   A [PlanTarget.compatible] channel falls back like the root, to older versions satisfying the range.
  *   If a target can't satisfy its dependent, as an optional dependency, it'll skip with a warning, and fails as a required one.
+ * - Without an exact version or channel, a dependency falls back to older satisfying versions
+ *   when a newer one's own required dependencies can't resolve.
  * - A plugin already at the chosen version is still planned when its source would change (repository, channel,
  *   hold, or a known artifact hash).
  * - A held dependency stays at its installed version unless targeted. If that doesn't satisfy the dependent,
  *   resolution fails.
  * - Unsatisfied required dependencies are planned recursively. Unresolvables will cause [PluginSystemResolveException].
- * - Unresolvable optional dependencies produce a warning.
+ * - Unresolvable optional dependencies, including ones whose own dependencies can't resolve, produce a warning.
  * - With [ResolveRequest.skipMissingOptionals], untargeted optional dependencies that aren't installed are skipped silently.
  * - A planned version that breaks an installed dependent outside the plan produces a warning.
  * - A planned version outside a planned dependent's range produces a warning.
@@ -268,12 +277,32 @@ internal fun resolveInstall(
             }
         }
 
-    /** Newest non-labeled, or newest, from the highest-priority repo serving that version. */
-    fun select(candidates: List<Triple<String, Version, RepoVersion>>): Triple<String, Version, RepoVersion>? {
-        if (candidates.isEmpty()) return null
-        val best = candidates.filter { it.second.label == null }.maxByOrNull { it.second }
-            ?: candidates.maxByOrNull { it.second }!!
-        return candidates.first { it.second == best.second }
+    /** Non-labeled versions newest first (labeled ones if there are none), each from the highest-priority repo serving it. */
+    fun ranked(candidates: List<Triple<String, Version, RepoVersion>>): List<Triple<String, Version, RepoVersion>> =
+        candidates.filter { it.second.label == null }.ifEmpty { candidates }
+            .distinctBy { it.second }
+            .sortedByDescending { it.second }
+
+    /** Runs [block], undoing everything it planned if it fails to resolve. Returns why it failed. */
+    fun tryPlanning(block: () -> Unit): ResolveIssue? {
+        val actionsBefore = LinkedHashMap(actions)
+        val dependenciesBefore = HashMap(plannedDependencies)
+        val edgesBefore = edges.mapValues { (_, dependents) -> dependents.toMutableMap() }
+        val warningsBefore = warnings.size
+
+        return try {
+            block()
+            null
+        } catch (e: PluginSystemResolveException) {
+            actions.clear()
+            actions.putAll(actionsBefore)
+            plannedDependencies.clear()
+            plannedDependencies.putAll(dependenciesBefore)
+            edges.clear()
+            edges.putAll(edgesBefore)
+            warnings.subList(warningsBefore, warnings.size).clear()
+            e.issue
+        }
     }
 
     /** What [channel] points to, from the highest-priority repo defining it. */
@@ -282,6 +311,17 @@ internal fun resolveInstall(
         val target = plugin.channels[channel] ?: return@firstNotNullOfOrNull null
         val version = runCatching { Version.parse(target) }.getOrNull() ?: return@firstNotNullOfOrNull null
         plugin.versions[target]?.let { Triple(repoUrl, version, it) }
+    }
+
+    /** [pointer], then older versions by preference, for when it can't resolve. */
+    fun fallbacksOf(id: String, pointer: Triple<String, Version, RepoVersion>) =
+        listOf(pointer) + ranked(candidatesFor(id).filter { it.second < pointer.second })
+
+    /** Records what [channel] points to on [id]'s action when it fell back below it. */
+    fun markFallback(id: String, channel: String) {
+        val pointer = pointerOf(id, channel)?.second ?: return
+        val action = actions[id] ?: return
+        if (action.version != pointer) actions[id] = action.copy(channelVersion = pointer)
     }
 
     /** Whether installing [choice] would change nothing about the installed [id]. */
@@ -296,28 +336,38 @@ internal fun resolveInstall(
                 (hold == null || source.held == hold)
     }
 
-    /** Resolves a targeted dependency within [range]. Returns the choice, or why the target can't be met. */
+    /** Resolves a targeted dependency within [range]. Returns the choices by preference, or why the target can't be met. */
     fun chooseTargeted(
         id: String,
         target: PlanTarget,
         range: VersionRange,
-    ): Pair<Triple<String, Version, RepoVersion>?, String?> {
+    ): Pair<List<Triple<String, Version, RepoVersion>>, String?> {
         val choice = when {
             target.version != null -> {
                 val exact = Version.parse(target.version)
                 candidatesFor(id).firstOrNull { it.second == exact }
-                    ?: return null to "Version ${target.version} of '$id' is not available"
+                    ?: return emptyList<Triple<String, Version, RepoVersion>>() to
+                            "Version ${target.version} of '$id' is not available"
             }
 
-            target.channel != null -> pointerOf(id, target.channel)
-                ?: return null to "Channel '${target.channel}' of '$id' is not available"
+            target.channel != null -> {
+                val pointer = pointerOf(id, target.channel)
+                    ?: return emptyList<Triple<String, Version, RepoVersion>>() to
+                            "Channel '${target.channel}' of '$id' is not available"
+                if (target.compatible) return fallbacksOf(id, pointer).filter { range.satisfies(it.second) }.let {
+                    it to if (it.isEmpty()) "No version of '$id' up to ${pointer.second} satisfies $range" else null
+                }
+                pointer
+            }
 
-            else -> select(candidatesFor(id).filter { range.satisfies(it.second) })
-                ?: return null to "No version of '$id' satisfying $range is available"
+            else -> return ranked(candidatesFor(id).filter { range.satisfies(it.second) }).let {
+                it to if (it.isEmpty()) "No version of '$id' satisfying $range is available" else null
+            }
         }
 
-        if (!range.satisfies(choice.second)) return null to "'$id'@${choice.second} does not satisfy $range"
-        return choice to null
+        if (!range.satisfies(choice.second)) return emptyList<Triple<String, Version, RepoVersion>>() to
+                "'$id'@${choice.second} does not satisfy $range"
+        return listOf(choice) to null
     }
 
     fun plan(id: String, chosen: Triple<String, Version, RepoVersion>) {
@@ -354,17 +404,29 @@ internal fun resolveInstall(
             if (target == null && effective == null && dep.optional && request.skipMissingOptionals) continue
 
             val held = target == null && sources[depId]?.held == true
-            val (depChoice, problem) = when {
-                held -> null to null
+            val (choices, problem) = when {
+                held -> emptyList<Triple<String, Version, RepoVersion>>() to null
                 target != null -> chooseTargeted(depId, target, range)
-                else -> select(candidatesFor(depId).filter { range.satisfies(it.second) }) to null
+                else -> ranked(candidatesFor(depId).filter { range.satisfies(it.second) }) to null
             }
 
-            if (depChoice != null) {
-                if (effective != null && unchanged(depId, depChoice)) continue
-                plan(depId, depChoice)
-                link(depId, id, dep.optional, range)
-                continue
+            // Falls back to older choices when a newer one's own dependencies can't resolve
+            var cause: ResolveIssue? = null
+            val resolved = choices.any { choice ->
+                if (effective != null && unchanged(depId, choice)) return@any true
+                val failure = tryPlanning { plan(depId, choice) }
+                if (failure == null) {
+                    link(depId, id, dep.optional, range)
+                    if (target?.channel != null && target.compatible) markFallback(depId, target.channel)
+                } else if (cause == null) cause = failure
+                failure == null
+            }
+            if (resolved) continue
+
+            // No choice resolved, blame the preferred one
+            cause?.let {
+                if (!dep.optional) throw PluginSystemResolveException(it)
+                warnings += it
             }
 
             val issue = ResolveIssue.Unresolved(
@@ -390,25 +452,42 @@ internal fun resolveInstall(
     // Resolve the root.
     val rootTarget = request.targets[request.id]
 
-    val rootChoice = if (rootTarget?.version != null) {
+    val rootChoices = if (rootTarget?.version != null) {
         val exact = Version.parse(rootTarget.version)
-        candidatesFor(request.id).firstOrNull { it.second == exact }
-            ?: throw PluginSystemResolveException(ResolveIssue.Unavailable(request.id, rootTarget.version))
+        listOf(
+            candidatesFor(request.id).firstOrNull { it.second == exact }
+                ?: throw PluginSystemResolveException(ResolveIssue.Unavailable(request.id, rootTarget.version))
+        )
     } else {
-        pointerOf(request.id, channelOf(request.id))
-            ?: select(candidatesFor(request.id))
-            ?: throw PluginSystemResolveException(ResolveIssue.Unavailable(request.id))
-    }
-
-    installed[request.id]?.let { current ->
-        if (unchanged(request.id, rootChoice))
-            return InstallPlan(emptyList(), listOf(ResolveIssue.UpToDate(request.id, current)))
-        if (rootChoice.second < current) {
-            warnings += ResolveIssue.Downgrade(request.id, current, rootChoice.second)
+        val pointer = pointerOf(request.id, channelOf(request.id))
+        when {
+            pointer == null -> ranked(candidatesFor(request.id))
+                .ifEmpty { throw PluginSystemResolveException(ResolveIssue.Unavailable(request.id)) }
+            // Like npm's dist-tags, an explicit channel means exactly what it points to
+            rootTarget?.channel != null && !rootTarget.compatible -> listOf(pointer)
+            else -> fallbacksOf(request.id, pointer)
         }
     }
 
-    plan(request.id, rootChoice)
+    var rootCause: ResolveIssue? = null
+    val rootPlanned = rootChoices.any { choice ->
+        installed[request.id]?.let { current ->
+            if (unchanged(request.id, choice))
+                return InstallPlan(emptyList(), listOf(ResolveIssue.UpToDate(request.id, current)))
+        }
+
+        val failure = tryPlanning { plan(request.id, choice) }
+        if (failure != null && rootCause == null) rootCause = failure
+        failure == null
+    }
+    // No choice resolved, blame the preferred one
+    if (!rootPlanned) throw PluginSystemResolveException(rootCause!!)
+    if (rootTarget?.version == null) markFallback(request.id, channelOf(request.id))
+
+    installed[request.id]?.let { current ->
+        val chosen = actions.getValue(request.id).version
+        if (chosen < current) warnings.add(0, ResolveIssue.Downgrade(request.id, current, chosen))
+    }
 
     // After planning, so dependents replaced by the plan never count as broken.
     for (action in actions.values) {
