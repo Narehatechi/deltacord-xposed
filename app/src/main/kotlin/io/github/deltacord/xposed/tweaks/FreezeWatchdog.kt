@@ -37,15 +37,25 @@ val freezeWatchdog by tweak {
     val main = Handler(Looper.getMainLooper())
 
     val tick = object : Runnable {
+        private var lastTick = SystemClock.uptimeMillis()
+
         override fun run() {
             main.post { lastResponse.set(SystemClock.uptimeMillis()) }
             val now = SystemClock.uptimeMillis()
+            // This watchdog itself was held up: Android paused the whole app (it does that to apps
+            // in the background), so nothing froze. Same if Discord isn't on screen (started in
+            // the background for a notification): only an on-screen freeze counts.
+            val paused = now - lastTick > 3_000
+            lastTick = now
+            if (paused || !onScreen()) lastResponse.set(now)
             val frozenFor = now - lastResponse.get()
             if (frozenFor > 8_000 && reported.compareAndSet(false, true)) {
                 try {
+                    val samples = sampleMainThread()
                     val report = buildString {
                         append("Discord's screen froze while starting (no response for ${frozenFor / 1000}s).\n\n")
                         append(StuckReport.build(dataDir, processStart, evenIfReady = true) ?: "")
+                        append("\nWhere the UI thread was, sampled ${SAMPLES} times:\n").append(samples)
                     }
                     log.w("UI thread frozen:\n$report")
                     StuckReport.flagStuckLaunch(dataDir)
@@ -74,4 +84,28 @@ val freezeWatchdog by tweak {
         }
     }
     background.postDelayed(tick, 3_000)
+}
+
+private const val SAMPLES = 12
+
+/** Discord has a screen showing (not started in the background). */
+private fun onScreen(): Boolean = try {
+    val info = android.app.ActivityManager.RunningAppProcessInfo()
+    android.app.ActivityManager.getMyMemoryState(info)
+    info.importance <= android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+} catch (_: Throwable) {
+    true
+}
+
+/** Samples the UI thread's stack a few times: a loop shows up as the same frames again and again. */
+private fun sampleMainThread(): String {
+    val main = Looper.getMainLooper().thread
+    val counts = LinkedHashMap<String, Int>()
+    repeat(SAMPLES) {
+        val top = main.stackTrace.take(6).joinToString("\n    < ") { it.toString() }
+        counts[top] = (counts[top] ?: 0) + 1
+        Thread.sleep(150)
+    }
+    return counts.entries.sortedByDescending { it.value }.take(4)
+        .joinToString("\n") { (frames, n) -> "  ${n}x:\n    $frames" } + "\n"
 }
