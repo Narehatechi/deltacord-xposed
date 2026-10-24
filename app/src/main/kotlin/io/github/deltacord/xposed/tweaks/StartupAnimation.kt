@@ -31,7 +31,6 @@ import io.github.deltacord.xposed.tweak
 import java.io.File
 import java.lang.ref.WeakReference
 import java.util.WeakHashMap
-import java.util.zip.ZipFile
 import kotlin.math.max
 import kotlin.math.min
 
@@ -58,7 +57,7 @@ val startupAnimation by tweak {
 
     StartupAnimation.log = log
     StartupAnimation.dataDir = dataDir
-    StartupAnimation.fontFile = extractFont(modulePath, dataDir, log)
+    StartupAnimation.modulePath = modulePath
     StartupAnimation.waitingForDiscord = true
 
     // Let the window draw while the animation is up, and learn when Discord says it's ready.
@@ -106,22 +105,6 @@ val startupAnimation by tweak {
     }
 }
 
-/** Copies the font out of the module APK once, so Android can load it. */
-private fun extractFont(modulePath: String, dataDir: String, log: Logger): File? = try {
-    val target = File(dataDir, "${DeltacordConstants.CACHE_DIR}/startup/DeterminationMono.ttf")
-    ZipFile(modulePath).use { zip ->
-        val entry = zip.getEntry("assets/fonts/DeterminationMono.ttf") ?: error("font missing from module")
-        if (!target.exists() || target.length() != entry.size) {
-            target.parentFile?.mkdirs()
-            zip.getInputStream(entry).use { input -> target.outputStream().use { input.copyTo(it) } }
-        }
-    }
-    target
-} catch (e: Throwable) {
-    log.w("Startup animation font unavailable, using a fallback", e)
-    null
-}
-
 /** Wraps a pre-draw listener so that, while the animation is up, it can't stop the window drawing. */
 private class DrawGate(
     val original: ViewTreeObserver.OnPreDrawListener,
@@ -151,7 +134,7 @@ private object StartupAnimation {
     var waitingForDiscord = false
 
     var log: Logger? = null
-    var fontFile: File? = null
+    var modulePath: String? = null
     var dataDir = ""
     private val processStart = System.currentTimeMillis()
     private var activityRef: WeakReference<Activity>? = null
@@ -216,8 +199,10 @@ private object StartupAnimation {
 
     fun show(activity: Activity) {
         val decor = activity.window?.decorView as? ViewGroup ?: return
-        val typeface = fontFile?.let { runCatching { Typeface.createFromFile(it) }.getOrNull() }
-            ?: Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        val typeface = modulePath?.let { BuiltinFont.get(it) }
+            ?: Typeface.create(Typeface.MONOSPACE, Typeface.BOLD).also {
+                log?.w("Startup animation font unavailable: ${BuiltinFont.problem}")
+            }
 
         launcherClass = activity.javaClass.name
         val animation = AnimationView(activity, typeface)

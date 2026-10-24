@@ -86,6 +86,15 @@ val fonts by tweak {
 
         // Determination is built into this module: put it in place right away instead of
         // downloading it, so the font is there as Discord starts.
+        // Android can quietly fail to load a font file (giving its default font instead), so for
+        // Determination the font is used straight from the module, not through files.
+        if (fontDef.main.isNotEmpty() && fontDef.main.values.all { DeterminationFont.isDeterminationUrl(it) }) {
+            val builtin = io.github.deltacord.xposed.tweaks.BuiltinFont.get(modulePath)
+            if (builtin == null) log.w("Built-in Determination font unavailable: ${io.github.deltacord.xposed.tweaks.BuiltinFont.problem}")
+            FontsState.builtinKeys = fontDef.main.keys
+            FontsState.builtin = builtin
+        }
+
         val pending = fontDef.main.filter { (name, url) ->
             !(DeterminationFont.isDeterminationUrl(url) && DeterminationFont.install(modulePath, File(setDir, "$name.ttf"), log))
         }
@@ -126,12 +135,20 @@ private object FontsState {
     @Volatile
     var fontsAbsPath: String? = null
 
+    /** Determination, loaded from the module, for the fonts in [builtinKeys]. */
+    @Volatile
+    var builtin: Typeface? = null
+
+    @Volatile
+    var builtinKeys: Set<String> = emptySet()
+
     fun createAssetTypeface(
         rawName: String,
         style: Int,
         assetManager: AssetManager,
     ): Typeface? {
         val fontFamilyNames = rawName.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toTypedArray()
+        builtin?.let { typeface -> if (fontFamilyNames.any { it in builtinKeys }) return typeface }
 
         var fontFamilyName = rawName
         if (fontFamilyNames.size > 1) {
