@@ -62,19 +62,7 @@ val freezeWatchdog by tweak {
                     runCatching {
                         File(dataDir, "${DeltacordConstants.FILES_DIR}/freeze-report.txt").writeText(report)
                     }
-                    val ctx = context.get()
-                    if (ctx != null) {
-                        val copied = runCatching {
-                            val clipboard = ctx.getSystemService(ClipboardManager::class.java)
-                            clipboard.setPrimaryClip(ClipData.newPlainText("Deltacord freeze report", report))
-                        }.isSuccess
-                        Toast.makeText(
-                            ctx,
-                            if (copied) "Deltacord: Discord froze. A report was copied, paste it to send it."
-                            else "Deltacord: Discord froze. A report was saved in Deltacord's files.",
-                            Toast.LENGTH_LONG,
-                        ).show()
-                    }
+                    // Kept quiet: the report is in Deltacord > Doctor > Copy report.
                 } catch (e: Throwable) {
                     log.e("Couldn't report the freeze", e)
                 }
