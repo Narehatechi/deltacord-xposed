@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap
  * is too slow (or silent) for a sound on every letter.
  *
  * - `deltacord.sound.load(path)` (async) loads a sound file once; returns its id.
- * - `deltacord.sound.play(id, volume)` plays it; several can overlap.
+ * - `deltacord.sound.play(id, volume, rate)` plays it (rate 0.5-2 also sets the pitch); several can overlap.
  */
 val nativeSound by tweak {
     val pool: SoundPool by lazy {
@@ -60,8 +60,10 @@ val nativeSound by tweak {
         val argv = args.asDelegate()
         val id by argv.int()
         val volume by argv.double(1.0)
+        val rate by argv.double(1.0)
         val v = volume.toFloat().coerceIn(0f, 1f)
-        pool.play(id, v, v, 1, 0, 1f)
+        // Rate is also the pitch: 0.5 is an octave down, 2 an octave up.
+        pool.play(id, v, v, 1, 0, rate.toFloat().coerceIn(0.5f, 2f))
     }
 }
 
