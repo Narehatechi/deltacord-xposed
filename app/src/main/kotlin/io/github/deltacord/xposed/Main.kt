@@ -10,6 +10,7 @@ import io.github.deltacord.bridge.DeltacordBridge
 import io.github.deltacord.xposed.api.HostScope
 import io.github.deltacord.xposed.tweaks.*
 import io.github.deltacord.xposed.tweaks.bridge.nativeSound
+import io.github.deltacord.xposed.tweaks.bridge.nativeFilePicker
 import io.github.deltacord.xposed.tweaks.base.lifecycleSupport
 import io.github.deltacord.xposed.tweaks.base.scriptLoader
 import io.github.deltacord.xposed.tweaks.bridge.DeltacordBridgeRegistry
@@ -59,6 +60,7 @@ class Main : IXposedHookLoadPackage, IXposedHookZygoteInit {
         discordDevSupport,
         additionalBridgeMethods,
         nativeSound,
+        nativeFilePicker,
         fonts,
         themes,
         sysColors,
