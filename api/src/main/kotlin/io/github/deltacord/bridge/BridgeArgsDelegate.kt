@@ -96,10 +96,10 @@ class ArgsDelegate(source: List<Any?>) {
             propNullable(src, indexProvider(), ::coerceInt)
 
         fun double(default: Double? = null): ReadOnlyProperty<Any?, Double> =
-            prop(src, indexProvider(), default, "Double") { it as? Double }
+            prop(src, indexProvider(), default, "Double") { (it as? Number)?.toDouble() }
 
         fun doubleOrNull(): ReadOnlyProperty<Any?, Double?> =
-            propNullable(src, indexProvider()) { it as? Double }
+            propNullable(src, indexProvider()) { (it as? Number)?.toDouble() }
 
         fun boolean(default: Boolean? = null): ReadOnlyProperty<Any?, Boolean> =
             prop(src, indexProvider(), default, "Boolean") { it as? Boolean }
