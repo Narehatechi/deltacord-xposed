@@ -23,7 +23,7 @@ import java.io.InputStream
  *   { path, width, height, mime, size, data (base64) }.
  * `uri` can be a file:// path, a content:// uri or a data: uri.
  */
-private const val MAX_DECODE = 4096
+private const val MAX_DECODE = 3072
 
 val nativeImage by tweak {
     withAppContext { ctx ->
