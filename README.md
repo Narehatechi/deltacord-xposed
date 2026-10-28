@@ -28,7 +28,7 @@
 
 # DeltacordXposed
 
-**Discord, your way.** DeltacordXposed is an Xposed module that loads [Deltacord](https://github.com/Narehatechi/deltacord-bundle-next) into Discord Android.
+**Discord, your way.** DeltacordXposed is an Xposed module that loads [Deltacord](https://github.com/Narehatechi/deltacord-bundle) into Discord Android.
 
 DeltacordXposed is the root installation method for Deltacord. It bootstraps the Deltacord bundle inside Discord's process, manages the plugin system, and bridges JavaScript with the Android platform.
 
