@@ -12,6 +12,7 @@ import io.github.deltacord.xposed.tweaks.*
 import io.github.deltacord.xposed.tweaks.bridge.nativeSound
 import io.github.deltacord.xposed.tweaks.bridge.nativeFilePicker
 import io.github.deltacord.xposed.tweaks.bridge.nativeImage
+import io.github.deltacord.xposed.tweaks.bridge.nativeCropper
 import io.github.deltacord.xposed.tweaks.bridge.managerLink
 import io.github.deltacord.xposed.tweaks.base.lifecycleSupport
 import io.github.deltacord.xposed.tweaks.base.scriptLoader
@@ -64,6 +65,7 @@ class Main : IXposedHookLoadPackage, IXposedHookZygoteInit {
         nativeSound,
         nativeFilePicker,
         nativeImage,
+        nativeCropper,
         managerLink,
         fonts,
         themes,

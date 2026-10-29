@@ -53,59 +53,69 @@ val nativeImage by tweak {
             val outHeight by argv.int(0)
             val mime by argv.string("image/png")
 
-            val bytes = readAll(ctx, uri)
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-            if (bounds.outWidth <= 0) throw Error("That isn't a picture Android can open")
-
-            // Big photos are decoded smaller (crop coordinates scale with them).
-            var sample = 1
-            while (maxOf(bounds.outWidth, bounds.outHeight) / sample > MAX_DECODE) sample *= 2
-            var bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
-                ?: throw Error("Couldn't open that picture")
-
-            val degrees = rotation(bytes)
-            if (degrees != 0) {
-                val turned = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, Matrix().apply { postRotate(degrees.toFloat()) }, true)
-                if (turned !== bitmap) bitmap.recycle()
-                bitmap = turned
-            }
-
-            val left = (x / sample).toInt().coerceIn(0, bitmap.width - 1)
-            val top = (y / sample).toInt().coerceIn(0, bitmap.height - 1)
-            val width = (w / sample).toInt().coerceIn(1, bitmap.width - left)
-            val height = (h / sample).toInt().coerceIn(1, bitmap.height - top)
-            var cropped = Bitmap.createBitmap(bitmap, left, top, width, height)
-            if (outWidth > 0 && outHeight > 0 && (outWidth != width || outHeight != height)) {
-                val scaled = Bitmap.createScaledBitmap(cropped, outWidth, outHeight, true)
-                if (scaled !== cropped) cropped.recycle()
-                cropped = scaled
-            }
-            if (cropped !== bitmap) bitmap.recycle()
-
-            val png = mime.contains("png") || mime.contains("webp")
-            val out = ByteArrayOutputStream()
-            cropped.compress(if (png) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, 92, out)
-            val result = out.toByteArray()
-            val file = File(ctx.cacheDir, "deltacord-crop-${System.currentTimeMillis().toString(36)}.${if (png) "png" else "jpg"}")
-            file.writeBytes(result)
-            val resultWidth = cropped.width
-            val resultHeight = cropped.height
-            cropped.recycle()
-
-            mapOf(
-                "path" to "file://${file.absolutePath}",
-                "width" to resultWidth.toDouble(),
-                "height" to resultHeight.toDouble(),
-                "mime" to if (png) "image/png" else "image/jpeg",
-                "size" to result.size.toDouble(),
-                "data" to Base64.encodeToString(result, Base64.NO_WRAP),
-            )
+            cropImage(ctx, readAll(ctx, uri), x, y, w, h, outWidth, outHeight, mime)
         }
     }
 }
 
-private fun readAll(ctx: Context, uri: String): ByteArray {
+/**
+ * Crops ([x], [y], [w], [h] in the picture's pixels as it's meant to be seen) and scales a picture,
+ * and returns what Discord's cropper returns: { path, width, height, mime, size, data }.
+ */
+internal fun cropImage(
+    ctx: Context, bytes: ByteArray, x: Double, y: Double, w: Double, h: Double,
+    outWidth: Int, outHeight: Int, mime: String,
+): Map<String, Any> {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth <= 0) throw Error("That isn't a picture Android can open")
+
+    // Big photos are decoded smaller (crop coordinates scale with them).
+    var sample = 1
+    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > MAX_DECODE) sample *= 2
+    var bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+        ?: throw Error("Couldn't open that picture")
+
+    val degrees = rotation(bytes)
+    if (degrees != 0) {
+        val turned = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, Matrix().apply { postRotate(degrees.toFloat()) }, true)
+        if (turned !== bitmap) bitmap.recycle()
+        bitmap = turned
+    }
+
+    val left = (x / sample).toInt().coerceIn(0, bitmap.width - 1)
+    val top = (y / sample).toInt().coerceIn(0, bitmap.height - 1)
+    val width = (w / sample).toInt().coerceIn(1, bitmap.width - left)
+    val height = (h / sample).toInt().coerceIn(1, bitmap.height - top)
+    var cropped = Bitmap.createBitmap(bitmap, left, top, width, height)
+    if (outWidth > 0 && outHeight > 0 && (outWidth != width || outHeight != height)) {
+        val scaled = Bitmap.createScaledBitmap(cropped, outWidth, outHeight, true)
+        if (scaled !== cropped) cropped.recycle()
+        cropped = scaled
+    }
+    if (cropped !== bitmap) bitmap.recycle()
+
+    val png = mime.contains("png") || mime.contains("webp")
+    val out = ByteArrayOutputStream()
+    cropped.compress(if (png) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, 92, out)
+    val result = out.toByteArray()
+    val file = File(ctx.cacheDir, "deltacord-crop-${System.currentTimeMillis().toString(36)}.${if (png) "png" else "jpg"}")
+    file.writeBytes(result)
+    val resultWidth = cropped.width
+    val resultHeight = cropped.height
+    cropped.recycle()
+
+    return mapOf(
+        "path" to "file://${file.absolutePath}",
+        "width" to resultWidth.toDouble(),
+        "height" to resultHeight.toDouble(),
+        "mime" to if (png) "image/png" else "image/jpeg",
+        "size" to result.size.toDouble(),
+        "data" to Base64.encodeToString(result, Base64.NO_WRAP),
+    )
+}
+
+internal fun readAll(ctx: Context, uri: String): ByteArray {
     if (uri.startsWith("data:")) {
         val comma = uri.indexOf(',')
         if (comma < 0) throw Error("Broken picture data")
@@ -120,7 +130,7 @@ private fun readAll(ctx: Context, uri: String): ByteArray {
 }
 
 /** How far the photo is turned (from its EXIF data), in degrees. */
-private fun rotation(bytes: ByteArray): Int = try {
+internal fun rotation(bytes: ByteArray): Int = try {
     when (ExifInterface(ByteArrayInputStream(bytes)).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
         ExifInterface.ORIENTATION_ROTATE_90 -> 90
         ExifInterface.ORIENTATION_ROTATE_180 -> 180
