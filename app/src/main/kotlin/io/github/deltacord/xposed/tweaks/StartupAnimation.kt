@@ -185,6 +185,8 @@ private object StartupAnimation {
 
     /** After the animation has played, how long to wait for Discord before explaining what's wrong. */
     private const val MAX_EXTRA_MS = 30_000L
+    /** After the animation gives up, how much longer Discord gets before the stuck message shows. */
+    private const val STUCK_PROMPT_MS = 15_000L
 
     fun gateFor(listener: ViewTreeObserver.OnPreDrawListener, fromLauncherCreate: Boolean): DrawGate =
         synchronized(gates) { gates.getOrPut(listener) { DrawGate(listener, fromLauncherCreate) } }
@@ -231,12 +233,14 @@ private object StartupAnimation {
                     } else {
                         log?.w("Discord is stuck starting:\n$report")
                         StuckReport.flagStuckLaunch(dataDir)
-                        // Quietly: step aside for Discord's own screen; the report is saved for
-                        // Deltacord > Doctor > Copy report.
                         runCatching {
                             File(dataDir, "${DeltacordConstants.FILES_DIR}/freeze-report.txt").writeText("Startup took too long.\n\n$report")
                         }
+                        // Step aside for Discord's own screen, and if Discord still hasn't opened a
+                        // little later, say so with a way out (someone stuck on the logo can't reach
+                        // Doctor to copy the report).
                         finish(force = true)
+                        handler.postDelayed(stuckCheck(), STUCK_PROMPT_MS)
                     }
                     return
                 }
@@ -316,17 +320,25 @@ private object StartupAnimation {
         }
     }
 
+    /** Checks again whether Discord is still stuck; if so, shows the report with a way out. */
+    private fun stuckCheck(): Runnable = object : Runnable {
+        override fun run() {
+            val report = runCatching { StuckReport.build(dataDir, processStart) }.getOrNull() ?: return
+            showStuckReport(report, this)
+        }
+    }
+
     /**
      * Discord hasn't opened long after the animation: explain what's going on instead of sitting on
      * a black screen, with a report to copy and a way into Discord without Deltacord.
      */
     private fun showStuckReport(report: String, check: Runnable) {
-        val activity = activityRef?.get() ?: return finish(force = true)
+        val activity = activityRef?.get()?.takeIf { !it.isFinishing && !it.isDestroyed } ?: return finish(force = true)
         if (dialog?.isShowing == true) return
         try {
             dialog = AlertDialog.Builder(activity)
                 .setTitle("Deltacord is stuck starting")
-                .setMessage("Discord hasn't opened. Copy this report and send it so it can be fixed.\n\n$report")
+                .setMessage("Discord hasn't opened after almost a minute. \"Open without Deltacord\" gets you into Discord this once (Deltacord comes back next time). Copy the report first and send it so it can be fixed.\n\n$report")
                 .setCancelable(false)
                 .setPositiveButton("Copy report") { _, _ ->
                     runCatching {
@@ -335,6 +347,7 @@ private object StartupAnimation {
                         Toast.makeText(activity, "Report copied", Toast.LENGTH_SHORT).show()
                     }
                     // Ask again in a bit, in case it's still stuck.
+                    dialog = null
                     handler.postDelayed(check, 1500)
                 }
                 .setNegativeButton("Open without Deltacord") { _, _ ->
@@ -346,7 +359,7 @@ private object StartupAnimation {
                     }
                     reloadApp()
                 }
-                .setNeutralButton("Keep waiting") { _, _ -> handler.postDelayed(check, 20_000) }
+                .setNeutralButton("Keep waiting") { _, _ -> handler.postDelayed(check, 30_000) }
                 .show()
         } catch (e: Throwable) {
             log?.e("Couldn't show the stuck report", e)

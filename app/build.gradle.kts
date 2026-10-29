@@ -15,8 +15,8 @@ android {
         applicationId = "io.github.deltacord.xposed"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 1930
-        versionName = "1.17.0"
+        versionCode = 1931
+        versionName = "1.17.1"
     }
 
     sourceSets {
