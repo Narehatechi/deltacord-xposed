@@ -31,6 +31,9 @@ private const val ACTION_REQUEST = "app.deltacord.REQUEST"
 private const val EXTRA_REQUEST = "deltacord.request"
 private const val EXTRA_REPLY = "deltacord.reply"
 private const val EXTRA_STATUS = "deltacord.status"
+private const val EXTRA_REPORT = "deltacord.report"
+/** Opened from the Manager to get a report: startup needs a while to get stuck (or not) first. */
+private const val REPORT_AFTER_LAUNCH_MS = 35_000L
 /** How long `next` waits before answering null (Deltacord then asks again). */
 private const val WAIT_MS = 50_000L
 
@@ -62,12 +65,32 @@ private fun replyOf(intent: Intent): PendingIntent? =
     if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(EXTRA_REPLY, PendingIntent::class.java)
     else intent.getParcelableExtra(EXTRA_REPLY)
 
+/**
+ * A report, built by the module on its own thread and sent straight back: it doesn't need
+ * Deltacord's JavaScript, so it works while Discord is stuck.
+ */
+private fun sendReport(id: String, reply: PendingIntent, delayMs: Long) {
+    Thread {
+        runCatching {
+            if (delayMs > 0) Thread.sleep(delayMs)
+            val ctx = appContext?.get() ?: return@Thread
+            val report = ModuleReport.build(ctx)
+            reply.send(ctx, 0, Intent().putExtra(EXTRA_REPORT, report).putExtra("deltacord.requestId", id))
+        }
+    }.apply { name = "deltacord-report"; isDaemon = true }.start()
+}
+
 /** Takes a request from an intent, only if the Manager made its reply token. */
-private fun accept(intent: Intent?): Boolean {
+private fun accept(intent: Intent?, fromLaunch: Boolean = false): Boolean {
     val request = intent?.getStringExtra(EXTRA_REQUEST) ?: return false
     val reply = runCatching { replyOf(intent) }.getOrNull() ?: return false
     if (reply.creatorPackage != MANAGER) return false
-    val id = runCatching { JSONObject(request).optString("id") }.getOrNull().orEmpty()
+    val json = runCatching { JSONObject(request) }.getOrNull()
+    if (json?.optString("action") == "report") {
+        sendReport(json.optString("id"), reply, if (fromLaunch) REPORT_AFTER_LAUNCH_MS else 0)
+        return true
+    }
+    val id = json?.optString("id").orEmpty()
     if (id.isNotEmpty()) replies[id] = reply
     lastReply = reply
     deliver(request)
@@ -95,7 +118,7 @@ val managerLink by tweak {
         after {
             val activity = thisObject as? Activity ?: return@after
             val intent = (args.firstOrNull() as? Intent) ?: activity.intent
-            if (accept(intent)) {
+            if (accept(intent, fromLaunch = true)) {
                 // Once only (not again when the screen rotates).
                 intent.removeExtra(EXTRA_REQUEST)
                 intent.removeExtra(EXTRA_REPLY)
