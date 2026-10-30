@@ -59,7 +59,6 @@ class Main : IXposedHookLoadPackage, IXposedHookZygoteInit {
         recoveryCompanion,
         playDeliveryFix,
         startupAnimation,
-        darkWorldOverlay,
         freezeWatchdog,
         discordDevSupport,
         additionalBridgeMethods,
