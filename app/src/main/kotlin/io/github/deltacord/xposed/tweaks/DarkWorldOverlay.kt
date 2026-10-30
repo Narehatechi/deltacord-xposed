@@ -19,6 +19,7 @@ import android.view.View
 import android.view.ViewGroup
 import de.robv.android.xposed.XposedBridge
 import io.github.deltacord.xposed.DeltacordConstants
+import io.github.deltacord.xposed.api.registerNativeMethod
 import io.github.deltacord.xposed.methodHook
 import io.github.deltacord.xposed.tweak
 import org.json.JSONObject
@@ -51,6 +52,12 @@ private val WORLDS = mapOf(
 
 private data class WorldConfig(val on: Boolean, val world: String, val strength: Float)
 
+/** A short effect: a tap's burst, or hearts rising from a sent message. */
+private class Effect(val kind: String, val x: Float, val y: Float, val start: Long, val seed: Int)
+
+private const val TAP_MS = 420L
+private const val SEND_MS = 1100L
+
 @SuppressLint("ViewConstructor")
 private class DarkWorldView(context: Context, private val configFile: File) : View(context) {
     private val started = SystemClock.uptimeMillis()
@@ -68,6 +75,21 @@ private class DarkWorldView(context: Context, private val configFile: File) : Vi
         if (Build.VERSION.SDK_INT >= 29) blendMode = BlendMode.SCREEN else xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
     }
     private val sparklePaint = Paint()
+    private val effects = ArrayList<Effect>()
+    private val effectPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    /** Where the last tap was (on screen), so a sent message's hearts rise from the send button. */
+    var lastTap: Pair<Float, Float>? = null
+
+    /** Plays an effect at a point on the screen. */
+    fun play(kind: String, screenX: Float, screenY: Float) {
+        if (!config.on) return
+        val loc = IntArray(2).also { getLocationOnScreen(it) }
+        effects.add(Effect(kind, screenX - loc[0], screenY - loc[1], SystemClock.uptimeMillis(), (screenX * 31 + screenY).toInt()))
+        if (effects.size > 12) effects.removeAt(0)
+        invalidate()
+    }
+
     private val sparkles = List(18) { Random(it * 104729 + 3).let { r -> floatArrayOf(r.nextFloat(), r.nextFloat(), r.nextFloat(), r.nextFloat()) } }
 
     init {
@@ -167,11 +189,81 @@ private class DarkWorldView(context: Context, private val configFile: File) : Vi
             canvas.drawRect(sx - p / 2, y - arm, sx + p / 2, y + arm, sparklePaint)
         }
 
+        drawEffects(canvas, world)
+
         if (running) postInvalidateDelayed(1000L / FPS)
+    }
+
+    private fun drawEffects(canvas: Canvas, world: World) {
+        val now = SystemClock.uptimeMillis()
+        effects.removeAll { now - it.start > (if (it.kind == "send") SEND_MS else TAP_MS) }
+        val d = density
+        for (e in effects) {
+            val rnd = Random(e.seed)
+            if (e.kind == "send") {
+                val k = (now - e.start) / SEND_MS.toFloat()
+                // A ring and a flash where the message went.
+                ringPaint.strokeWidth = 3 * d
+                ringPaint.color = withAlpha(Color.WHITE, (1 - k) * 0.9f)
+                canvas.drawCircle(e.x, e.y, (10 + 70 * k) * d, ringPaint)
+                // Little SOULs rising and swaying, fading out.
+                for (i in 0 until 6) {
+                    val sx = e.x + (rnd.nextFloat() - 0.5f) * 90 * d + sin(k * 9f + i) * 10 * d
+                    val sy = e.y - (40 + rnd.nextFloat() * 120) * d * k - 10 * d
+                    val size = (1.6f + rnd.nextFloat() * 1.2f) * d
+                    drawHeart(canvas, sx, sy, size, withAlpha(0xFFFF2020.toInt(), (1 - k) * 1.0f))
+                }
+                // And sparkles bursting out.
+                for (i in 0 until 10) {
+                    val ang = rnd.nextFloat() * 6.283f
+                    val dist = (20 + rnd.nextFloat() * 70) * d * k
+                    val c = world.sparkles[i % world.sparkles.size]
+                    effectPaint.color = withAlpha(c, (1 - k) * 0.95f)
+                    val sz = 3 * d * (1 - k * 0.5f)
+                    canvas.drawRect(e.x + cos(ang) * dist - sz / 2, e.y + sin(ang) * dist - sz / 2, e.x + cos(ang) * dist + sz / 2, e.y + sin(ang) * dist + sz / 2, effectPaint)
+                }
+            } else {
+                val k = (now - e.start) / TAP_MS.toFloat()
+                // An expanding ring in the world's colour, with pixels flying out.
+                val c = cycle(world.lights, e.seed * 0.013f)
+                ringPaint.strokeWidth = 2.5f * d * (1 - k)
+                ringPaint.color = withAlpha(Color.WHITE, (1 - k) * 0.85f)
+                canvas.drawCircle(e.x, e.y, (6 + 34 * k) * d, ringPaint)
+                ringPaint.color = withAlpha(c, (1 - k) * 0.8f)
+                canvas.drawCircle(e.x, e.y, (4 + 22 * k) * d, ringPaint)
+                for (i in 0 until 8) {
+                    val ang = i * 0.785f + rnd.nextFloat() * 0.4f
+                    val dist = (8 + 36 * k) * d
+                    effectPaint.color = withAlpha(world.sparkles[i % world.sparkles.size], (1 - k))
+                    val sz = 2.5f * d
+                    canvas.drawRect(e.x + cos(ang) * dist - sz / 2, e.y + sin(ang) * dist - sz / 2, e.x + cos(ang) * dist + sz / 2, e.y + sin(ang) * dist + sz / 2, effectPaint)
+                }
+            }
+        }
+        if (effects.isNotEmpty() && !running) invalidate()
+    }
+
+    private val heart = arrayOf(".XX.XX.", "XXXXXXX", "XXXXXXX", ".XXXXX.", "..XXX..", "...X...")
+
+    private fun drawHeart(canvas: Canvas, cx: Float, cy: Float, px: Float, color: Int) {
+        effectPaint.color = color
+        val left = cx - heart[0].length * px / 2
+        val top = cy - heart.size * px / 2
+        for (y in heart.indices) for (x in heart[y].indices) {
+            if (heart[y][x] == 'X') canvas.drawRect(left + x * px, top + y * px, left + (x + 1) * px + 0.5f, top + (y + 1) * px + 0.5f, effectPaint)
+        }
     }
 }
 
 private val overlays = WeakHashMap<Activity, DarkWorldView>()
+
+/** The overlay of the screen that's showing. */
+private fun current(): DarkWorldView? = overlays.values.firstOrNull { it.running }
+
+/** Where a touch went down (to tell taps from scrolls). */
+private var downX = 0f
+private var downY = 0f
+private var downAt = 0L
 
 val darkWorldOverlay by tweak {
     XposedBridge.hookAllMethods(Activity::class.java, "onResume", methodHook {
@@ -195,4 +287,36 @@ val darkWorldOverlay by tweak {
     XposedBridge.hookAllMethods(Activity::class.java, "onPause", methodHook {
         after { overlays[thisObject as? Activity]?.running = false }
     }.build())
+
+    // Taps (not scrolls): a burst where the finger lifted. Only watched, never changed.
+    XposedBridge.hookAllMethods(Activity::class.java, "dispatchTouchEvent", methodHook {
+        before {
+            val event = args.firstOrNull() as? android.view.MotionEvent ?: return@before
+            val view = overlays[thisObject as? Activity] ?: return@before
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    downX = event.rawX; downY = event.rawY; downAt = SystemClock.uptimeMillis()
+                }
+                android.view.MotionEvent.ACTION_UP -> {
+                    val slop = 14 * view.resources.displayMetrics.density
+                    val quick = SystemClock.uptimeMillis() - downAt < 400
+                    if (quick && kotlin.math.abs(event.rawX - downX) < slop && kotlin.math.abs(event.rawY - downY) < slop) {
+                        view.lastTap = event.rawX to event.rawY
+                        view.play("tap", event.rawX, event.rawY)
+                    }
+                }
+            }
+        }
+    }.build())
+
+    // Deltacord asks for effects: "send" (hearts rising from the send button, the last tap).
+    registerNativeMethod("deltacord.world.effect") { args ->
+        val kind = args.firstOrNull() as? String ?: "send"
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            val view = current() ?: return@post
+            val (x, y) = view.lastTap ?: (view.width * 0.88f to view.height * 0.9f)
+            view.play(kind, x, y)
+        }
+        true
+    }
 }
