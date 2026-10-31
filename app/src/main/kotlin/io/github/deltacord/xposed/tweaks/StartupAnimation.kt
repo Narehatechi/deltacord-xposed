@@ -11,9 +11,6 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.LinearGradient
-import android.graphics.Paint
-import android.graphics.Shader
 import android.graphics.Typeface
 import android.os.Handler
 import android.os.Looper
@@ -34,15 +31,14 @@ import java.io.File
 import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 import kotlin.math.max
-import kotlin.math.min
 
 /**
  * Deltacord's startup animation, shown instead of Discord's logo while Discord starts.
  *
- * In the style of deltarune.com: on black, "DEL", then "TA", then "CORD" glow in, one after the
- * other, in white Determination Mono, as one word running along the long side of the screen.
- * Then a little "by Narehatechi" spins in near the bottom edge and wobbles.
- * It stays (gently glowing) until Discord has drawn its first screen, then fades away.
+ * One of fourteen styles (chosen in Deltacord > Extras, or random each launch) draws DELTACORD in
+ * Determination Mono along the long side of the screen, in one of a few colour variants (a rare
+ * golden one about one launch in fifty). It plays for at least [StartupScene.PLAY_MS] and stays
+ * (gently glowing, sparkling) until Discord has drawn its first screen, then fades away.
  *
  * Discord normally holds its logo on screen until it's ready by blocking drawing; while the
  * animation is up that block is lifted (Discord's own check still decides when it's ready), so the
@@ -165,7 +161,7 @@ private object StartupAnimation {
 
         val current = view ?: return
         val typeface = current.typeface
-        val moved = AnimationView(activity, typeface, startOffsetMs = AnimationView.PLAY_MS).apply {
+        val moved = AnimationView(activity, typeface, startOffsetMs = AnimationView.PLAY_MS, scene = current.scene).apply {
             targetProgress = current.targetProgress
             status = current.status
             translationZ = 10_000f
@@ -210,7 +206,7 @@ private object StartupAnimation {
             }
 
         launcherClass = activity.javaClass.name
-        val animation = AnimationView(activity, typeface)
+        val animation = AnimationView(activity, typeface, scene = pickScene(activity))
         animation.translationZ = 10_000f
         decor.addView(animation, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         view = animation
@@ -252,7 +248,19 @@ private object StartupAnimation {
         handler.postDelayed(check, 200)
     }
 
-    /** Turns Deltacord's startup record into the progress bar and the line under it. */
+    /** The style chosen in Deltacord > Extras (or a random one), in random colours. */
+    private fun pickScene(activity: Activity): StartupScene {
+        val setting = runCatching {
+            File(dataDir, "${DeltacordConstants.FILES_DIR}/startup-animation-style").takeIf { it.exists() }?.readText()?.trim()
+        }.getOrNull()
+        val random = java.util.Random()
+        val style = StartupStyles.pickStyle(setting, random)
+        val palette = StartupStyles.pickPalette(random)
+        log?.i("Startup animation: $style in ${palette.id}")
+        return StartupScene(style, palette, random.nextInt(10_000), activity.resources.displayMetrics.density)
+    }
+
+    /** Turns Deltacord's startup record into the status kept for the stuck report. */
     private fun updateProgress() {
         val animation = view ?: return
         val launch = StuckReport.thisLaunch(dataDir, processStart)
@@ -404,71 +412,30 @@ private object StartupAnimation {
 }
 
 /**
- * Draws the animation: black, then DEL / TA / CORD glowing in, then a slow breathing glow.
- * The word runs along the long side of the screen (turned 90 degrees).
+ * Draws one of the start-up animation styles ([StartupScene]) over Discord while it starts.
+ * The word runs along the long side of the screen (turned 90 degrees on a phone).
  */
-@SuppressLint("ViewConstructor")
 private class AnimationView(
     context: Context,
     val typeface: Typeface,
-    /** Skip ahead (used when moving to a recreated screen, so the word doesn't replay). */
+    /** Skip ahead (used when moving to a recreated screen, so the animation doesn't replay). */
     startOffsetMs: Long = 0,
+    /** Which style and colours this launch plays; a recreated screen carries on with the same. */
+    val scene: StartupScene,
 ) : View(context) {
     companion object {
-        private val PARTS = arrayOf("DEL", "TA", "CORD")
-        private const val WORD = "DELTACORD"
-
-        /** When each part starts appearing, and how long it takes (ms). */
-        private val PART_START = longArrayOf(250, 900, 1550)
-        private const val PART_FADE = 520L
-        /** The whole word pulses brighter once it's complete. */
-        private const val PULSE_START = 2100L
-        private const val PULSE_LENGTH = 600L
-        /** "by Narehatechi" spins in near the bottom edge, then wobbles. */
-        private const val CREDIT = "by Narehatechi"
-        private const val CREDIT_START = 2150L
-        private const val CREDIT_SPIN = 750L
-        const val PLAY_MS = 3200L
+        const val PLAY_MS = StartupScene.PLAY_MS
     }
 
     private val start = SystemClock.uptimeMillis() - startOffsetMs
     var played = false
         private set
 
-    /** Startup progress, 0..1, and what's happening (set from the startup record). */
+    /** Startup progress, 0..1, and what's happening (kept for the stuck report, no longer drawn). */
     @Volatile
     var targetProgress = 0.03f
     @Volatile
     var status = "Starting…"
-    private var shownProgress = 0f
-
-    private val density = resources.displayMetrics.density
-    private val core = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        this.typeface = typeface
-        color = Color.WHITE
-        textAlign = Paint.Align.LEFT
-    }
-    private val glow = Paint(core)
-    private val halo = Paint(core)
-    private val credit = Paint(core).apply { textAlign = Paint.Align.CENTER }
-    /** The Manager title's sparkle: a rainbow shine that sweeps across the letters. */
-    private val shine = Paint(core)
-    private val split = Paint(core)
-    private val star = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND }
-
-    /** Twinkling + sparkles around the word: position (fraction of the word box), phase, colour. */
-    private val sparkleColours = intArrayOf(Color.WHITE, 0xFFFFFF00.toInt(), 0xFF66FFFF.toInt(), 0xFFFF77DD.toInt())
-    private val sparkles = run {
-        val random = java.util.Random(0xDE17AL)
-        Array(14) {
-            floatArrayOf(
-                random.nextFloat() * 1.1f - 0.05f,
-                if (random.nextBoolean()) -0.35f - random.nextFloat() * 0.45f else 1.1f + random.nextFloat() * 0.45f,
-                random.nextFloat() * 6.28f,
-                0.6f + random.nextFloat() * 0.8f,
-            )
-        }
-    }
 
     init {
         setBackgroundColor(Color.BLACK)
@@ -476,170 +443,21 @@ private class AnimationView(
         isClickable = true
         isFocusable = true
         setOnTouchListener { _, _ -> true }
-        // Shadow-based glow on text needs a software layer on older Android versions.
+        // Shadow-based glow needs a software layer on older Android versions.
         if (android.os.Build.VERSION.SDK_INT < 28) setLayerType(View.LAYER_TYPE_SOFTWARE, null)
     }
-
-    private fun fade(t: Long, from: Long, length: Long): Float =
-        ((t - from).toFloat() / length).coerceIn(0f, 1f).let { it * it * (3 - 2 * it) } // smoothstep
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val t = SystemClock.uptimeMillis() - start
         if (t >= PLAY_MS) played = true
-
-        val w = width.toFloat()
-        val h = height.toFloat()
-        if (w <= 0 || h <= 0) return
-
-        // Turned 90 degrees: the word runs along the long side.
-        val along = max(w, h)
-        val across = min(w, h)
-        canvas.save()
-        canvas.rotate(90f, w / 2, h / 2)
-        canvas.translate((w - along) / 2, (h - across) / 2)
-
-        // Size the word to fill most of the long side, without getting too tall for the short side.
-        // Drawn from Determination's letter outlines (DeterminationGlyphs), not a loaded font.
-        val sizeForLength = (along * 0.80f) / DeterminationGlyphs.width(WORD, 1f)
-        val sizeForHeight = across * 0.42f
-        val size = min(sizeForLength, sizeForHeight)
-
-        val wordWidth = DeterminationGlyphs.width(WORD, size)
-        val x0 = (along - wordWidth) / 2
-        // Capitals are 1152 units tall (of 2048): centre them.
-        val baseline = across / 2 + size * (1152f / DeterminationGlyphs.UNITS_PER_EM) / 2
-
-        // A brighter pulse once the word is complete, then a slow breath while Discord finishes starting.
-        val pulse = if (t in PULSE_START until PULSE_START + PULSE_LENGTH) {
-            val p = (t - PULSE_START).toFloat() / PULSE_LENGTH
-            kotlin.math.sin(p * Math.PI).toFloat()
-        } else 0f
-        val breath = if (t >= PULSE_START + PULSE_LENGTH) {
-            ((kotlin.math.sin((t - PULSE_START - PULSE_LENGTH) / 900.0) + 1) / 2).toFloat() * 0.35f
-        } else 0f
-
-        var x = x0
-        for ((index, part) in PARTS.withIndex()) {
-            val appear = fade(t, PART_START[index], PART_FADE)
-            if (appear > 0f) {
-                // Each part arrives with a strong glow that settles down.
-                val settle = 1f - fade(t, PART_START[index] + PART_FADE / 2, PART_FADE * 2)
-                val glowAmount = 0.55f + 0.45f * settle + pulse * 0.6f + breath
-
-                halo.alpha = (90 * appear * glowAmount).toInt().coerceIn(0, 255)
-                halo.setShadowLayer(size * 0.38f + density * 6, 0f, 0f, Color.WHITE)
-                drawWord(canvas, part, x, baseline, size, halo)
-
-                glow.alpha = (170 * appear * glowAmount).toInt().coerceIn(0, 255)
-                glow.setShadowLayer(size * 0.12f + density * 2, 0f, 0f, Color.WHITE)
-                drawWord(canvas, part, x, baseline, size, glow)
-
-                core.alpha = (255 * appear).toInt()
-                drawWord(canvas, part, x, baseline, size, core)
-            }
-            x += DeterminationGlyphs.width(part, size)
+        try {
+            scene.draw(canvas, t, width, height)
+        } catch (e: Throwable) {
+            // A drawing problem must never keep Discord hidden: count the animation as played.
+            played = true
+            canvas.drawColor(Color.BLACK)
         }
-
-        if (t >= PULSE_START) drawSparkle(canvas, t, x0, baseline, wordWidth, size)
-
-        canvas.restore()
-
-        drawCredit(canvas, t, w, h)
-
         postInvalidateOnAnimation()
-    }
-
-    /**
-     * The Deltacord Manager title's sparkle, once the word is complete: a rainbow shine sweeping
-     * across the letters, + sparkles twinkling around them, and a quick red/cyan glitch now and then.
-     */
-    private fun drawSparkle(canvas: Canvas, t: Long, x0: Float, baseline: Float, wordWidth: Float, size: Float) {
-        val since = (t - PULSE_START) / 1000f
-        val intro = fade(t, PULSE_START, 400)
-        val capHeight = size * (1152f / DeterminationGlyphs.UNITS_PER_EM)
-        val top = baseline - capHeight
-
-        // Shine: a band (white, then the rainbow, then white) that crosses the word every ~2.5s.
-        val sweep = (since * 0.4f) % 1.8f - 0.4f
-        val band = wordWidth * 0.45f
-        val centre = x0 + sweep * wordWidth
-        val clear = Color.TRANSPARENT
-        shine.shader = LinearGradient(
-            centre - band, top - capHeight * 0.4f, centre + band, baseline + capHeight * 0.4f,
-            intArrayOf(clear, Color.WHITE, 0xFFFF5577.toInt(), 0xFFFFDD33.toInt(), 0xFF55FFAA.toInt(), 0xFF55CCFF.toInt(), 0xFFCC77FF.toInt(), Color.WHITE, clear),
-            floatArrayOf(0f, 0.18f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.82f, 1f),
-            Shader.TileMode.CLAMP,
-        )
-        shine.alpha = (230 * intro).toInt()
-        shine.setShadowLayer(size * 0.08f + density * 2, 0f, 0f, Color.WHITE)
-        drawWord(canvas, WORD, x0, baseline, size, shine)
-
-        // Glitch: every 6 seconds, for a moment, the word splits red and cyan and shakes.
-        val cycle = since % 6f
-        if (since > 1f && cycle < 0.18f) {
-            val shake = density * 3 * kotlin.math.sin(cycle * 180f)
-            val gap = size * 0.035f
-            split.color = Color.RED; split.alpha = 170
-            drawWord(canvas, WORD, x0 - gap + shake, baseline, size, split)
-            split.color = Color.CYAN; split.alpha = 170
-            drawWord(canvas, WORD, x0 + gap - shake, baseline, size, split)
-        }
-
-        // Sparkles: + shapes that grow, twinkle and fade around the word.
-        star.strokeWidth = max(density * 1.6f, size * 0.025f)
-        for ((i, s) in sparkles.withIndex()) {
-            val wave = kotlin.math.sin(since * 2.4f * s[3] + s[2])
-            if (wave <= 0f) continue
-            val sx = x0 + s[0] * wordWidth
-            val sy = top + s[1] * capHeight
-            val arm = size * 0.11f * wave * s[3]
-            star.color = sparkleColours[i % sparkleColours.size]
-            star.alpha = (255 * wave * intro).toInt().coerceIn(0, 255)
-            star.setShadowLayer(arm * 0.9f + density, 0f, 0f, star.color)
-            canvas.drawLine(sx - arm, sy, sx + arm, sy, star)
-            canvas.drawLine(sx, sy - arm, sx, sy + arm, star)
-        }
-    }
-
-    private fun drawWord(canvas: Canvas, text: String, x: Float, baseline: Float, size: Float, paint: Paint) {
-        canvas.save()
-        canvas.translate(x, baseline)
-        canvas.drawPath(DeterminationGlyphs.path(text, size), paint)
-        canvas.restore()
-    }
-
-    /** Ease out with a little overshoot, so the spin lands with a bounce. */
-    private fun backOut(x: Float): Float {
-        val c1 = 1.70158f
-        val c3 = c1 + 1
-        val p = x - 1
-        return 1 + c3 * p * p * p + c1 * p * p
-    }
-
-    /** "by Narehatechi": spins in near the bottom (short) edge, then wobbles like a splash text. */
-    private fun drawCredit(canvas: Canvas, t: Long, w: Float, h: Float) {
-        if (t < CREDIT_START) return
-        val spin = ((t - CREDIT_START).toFloat() / CREDIT_SPIN).coerceIn(0f, 1f)
-        val eased = backOut(spin)
-        val since = (t - CREDIT_START).toDouble()
-
-        val scale = max(0f, eased) * (1f + 0.045f * kotlin.math.sin(since / 170.0).toFloat() * spin)
-        val angle = -720f * (1f - eased) + 4f * kotlin.math.sin(since / 320.0).toFloat() * spin
-        if (scale <= 0.01f) return
-
-        credit.textSize = min(w, h) * 0.075f
-        credit.alpha = (255 * spin.coerceAtMost(1f)).toInt().coerceIn(0, 255)
-        credit.setShadowLayer(credit.textSize * 0.35f, 0f, 0f, Color.WHITE)
-
-        val cx = w / 2
-        val cy = h * 0.955f
-        canvas.save()
-        canvas.translate(cx, cy)
-        canvas.rotate(angle)
-        canvas.scale(scale, scale)
-        // Centred on the x-height-ish middle of the letters.
-        drawWord(canvas, CREDIT, -DeterminationGlyphs.width(CREDIT, credit.textSize) / 2, credit.textSize * 0.28f, credit.textSize, credit)
-        canvas.restore()
     }
 }
