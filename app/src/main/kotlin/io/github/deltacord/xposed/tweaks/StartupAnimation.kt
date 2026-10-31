@@ -11,7 +11,9 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Shader
 import android.graphics.Typeface
 import android.os.Handler
 import android.os.Looper
@@ -449,6 +451,24 @@ private class AnimationView(
     private val glow = Paint(core)
     private val halo = Paint(core)
     private val credit = Paint(core).apply { textAlign = Paint.Align.CENTER }
+    /** The Manager title's sparkle: a rainbow shine that sweeps across the letters. */
+    private val shine = Paint(core)
+    private val split = Paint(core)
+    private val star = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND }
+
+    /** Twinkling + sparkles around the word: position (fraction of the word box), phase, colour. */
+    private val sparkleColours = intArrayOf(Color.WHITE, 0xFFFFFF00.toInt(), 0xFF66FFFF.toInt(), 0xFFFF77DD.toInt())
+    private val sparkles = run {
+        val random = java.util.Random(0xDE17AL)
+        Array(14) {
+            floatArrayOf(
+                random.nextFloat() * 1.1f - 0.05f,
+                if (random.nextBoolean()) -0.35f - random.nextFloat() * 0.45f else 1.1f + random.nextFloat() * 0.45f,
+                random.nextFloat() * 6.28f,
+                0.6f + random.nextFloat() * 0.8f,
+            )
+        }
+    }
 
     init {
         setBackgroundColor(Color.BLACK)
@@ -521,11 +541,65 @@ private class AnimationView(
             x += DeterminationGlyphs.width(part, size)
         }
 
+        if (t >= PULSE_START) drawSparkle(canvas, t, x0, baseline, wordWidth, size)
+
         canvas.restore()
 
         drawCredit(canvas, t, w, h)
 
         postInvalidateOnAnimation()
+    }
+
+    /**
+     * The Deltacord Manager title's sparkle, once the word is complete: a rainbow shine sweeping
+     * across the letters, + sparkles twinkling around them, and a quick red/cyan glitch now and then.
+     */
+    private fun drawSparkle(canvas: Canvas, t: Long, x0: Float, baseline: Float, wordWidth: Float, size: Float) {
+        val since = (t - PULSE_START) / 1000f
+        val intro = fade(t, PULSE_START, 400)
+        val capHeight = size * (1152f / DeterminationGlyphs.UNITS_PER_EM)
+        val top = baseline - capHeight
+
+        // Shine: a band (white, then the rainbow, then white) that crosses the word every ~2.5s.
+        val sweep = (since * 0.4f) % 1.8f - 0.4f
+        val band = wordWidth * 0.45f
+        val centre = x0 + sweep * wordWidth
+        val clear = Color.TRANSPARENT
+        shine.shader = LinearGradient(
+            centre - band, top - capHeight * 0.4f, centre + band, baseline + capHeight * 0.4f,
+            intArrayOf(clear, Color.WHITE, 0xFFFF5577.toInt(), 0xFFFFDD33.toInt(), 0xFF55FFAA.toInt(), 0xFF55CCFF.toInt(), 0xFFCC77FF.toInt(), Color.WHITE, clear),
+            floatArrayOf(0f, 0.18f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.82f, 1f),
+            Shader.TileMode.CLAMP,
+        )
+        shine.alpha = (230 * intro).toInt()
+        shine.setShadowLayer(size * 0.08f + density * 2, 0f, 0f, Color.WHITE)
+        drawWord(canvas, WORD, x0, baseline, size, shine)
+
+        // Glitch: every 6 seconds, for a moment, the word splits red and cyan and shakes.
+        val cycle = since % 6f
+        if (since > 1f && cycle < 0.18f) {
+            val shake = density * 3 * kotlin.math.sin(cycle * 180f)
+            val gap = size * 0.035f
+            split.color = Color.RED; split.alpha = 170
+            drawWord(canvas, WORD, x0 - gap + shake, baseline, size, split)
+            split.color = Color.CYAN; split.alpha = 170
+            drawWord(canvas, WORD, x0 + gap - shake, baseline, size, split)
+        }
+
+        // Sparkles: + shapes that grow, twinkle and fade around the word.
+        star.strokeWidth = max(density * 1.6f, size * 0.025f)
+        for ((i, s) in sparkles.withIndex()) {
+            val wave = kotlin.math.sin(since * 2.4f * s[3] + s[2])
+            if (wave <= 0f) continue
+            val sx = x0 + s[0] * wordWidth
+            val sy = top + s[1] * capHeight
+            val arm = size * 0.11f * wave * s[3]
+            star.color = sparkleColours[i % sparkleColours.size]
+            star.alpha = (255 * wave * intro).toInt().coerceIn(0, 255)
+            star.setShadowLayer(arm * 0.9f + density, 0f, 0f, star.color)
+            canvas.drawLine(sx - arm, sy, sx + arm, sy, star)
+            canvas.drawLine(sx, sy - arm, sx, sy + arm, star)
+        }
     }
 
     private fun drawWord(canvas: Canvas, text: String, x: Float, baseline: Float, size: Float, paint: Paint) {
