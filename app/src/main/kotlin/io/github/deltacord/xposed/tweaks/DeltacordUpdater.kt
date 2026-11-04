@@ -34,7 +34,13 @@ data class LoaderConfig(
  */
 object DeltacordUpdater {
     internal val TIMEOUT = 10.seconds
-    private val TIMEOUT_CACHED = 5.seconds
+    /** How long a launch repairing a stuck one waits for its fresh download. */
+    internal val TIMEOUT_FRESH = 30.seconds
+    /**
+     * The download itself isn't cut off when the launch stops waiting: on a slow connection it
+     * finishes in the background, so the next launch has it.
+     */
+    private val DOWNLOAD_LIMIT = 120.seconds
     private const val ETAG_PATH = "etag.txt"
     private const val CONFIG_PATH = "loader.json"
     private const val DEFAULT_BUNDLE_URL =
@@ -67,6 +73,12 @@ object DeltacordUpdater {
         etag = File(cacheDir, ETAG_PATH)
         configFile = File(filesDir, CONFIG_PATH)
 
+        // Repairing a stuck launch: start from a clean download.
+        if (StartupRecovery.mode(dataDir) == StartupRecovery.Mode.FRESH) {
+            log.w("Last launch got stuck: downloading Deltacord again from scratch")
+            runCatching { bundle.delete(); etag.delete(); manifest.delete() }
+        }
+
         config = runCatching {
             if (configFile.exists()) DeltacordJson.decodeFromString<LoaderConfig>(configFile.readText())
             else LoaderConfig()
@@ -88,13 +100,14 @@ object DeltacordUpdater {
 
             val result = httpClient.getWithETag(
                 url = url,
-                etag = if (etag.exists() && bundle.exists()) etag.readText() else null,
-                timeoutMillis = if (userInitiated) null
-                else if (bundle.exists()) TIMEOUT_CACHED.inWholeMilliseconds else TIMEOUT.inWholeMilliseconds,
+                etag = if (etag.exists() && hasBundle()) etag.readText() else null,
+                timeoutMillis = if (userInitiated) null else DOWNLOAD_LIMIT.inWholeMilliseconds,
             )
 
             when (result) {
                 is ETagFetchResult.Fetched -> {
+                    // An empty or cut-off answer (a captive portal, a filter) is not Deltacord.
+                    if (result.bytes.size < 50_000) error("Download too small (${result.bytes.size} bytes)")
                     AtomicFile(bundle).writeBytes(result.bytes)
                     result.etag?.let(etag::writeText) ?: etag.delete()
 
@@ -111,7 +124,8 @@ object DeltacordUpdater {
             }
         } catch (e: Throwable) {
             log.e("Failed to download script", e)
-            showErrorDialog(e)
+            // Without a download, the built-in copy runs, so only say so when asked to retry.
+            if (userInitiated) showErrorDialog(e)
         } finally {
             _downloadReady.complete(Unit)
         }
@@ -131,6 +145,9 @@ object DeltacordUpdater {
             log.w("Failed to download bundle manifest", e)
         }
     }
+
+    /** A downloaded Deltacord is there (not an empty placeholder). */
+    fun hasBundle(): Boolean = ::bundle.isInitialized && bundle.length() > 50_000
 
     fun readBundleManifest(): String? {
         if (manifest.exists()) return manifest.readText()

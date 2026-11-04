@@ -115,6 +115,11 @@ jobs:
             echo "::warning::No KEYSTORE secret, so the release is signed with a temporary debug key."
           fi
 
+      - name: Build in a copy of Deltacord
+        if: steps.ver.outputs.skip != 'true'
+        # The fallback the module runs when the download is missing, blocked or won't start.
+        run: curl -fsSL --retry 3 -o app/src/main/assets/deltacord.bundle https://github.com/Narehatechi/deltacord-bundle/releases/latest/download/deltacord.min.js
+
       - name: Build APKs
         if: steps.ver.outputs.skip != 'true'
         env:

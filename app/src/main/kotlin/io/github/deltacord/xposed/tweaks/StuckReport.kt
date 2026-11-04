@@ -79,7 +79,8 @@ internal object StuckReport {
             }
         }
 
-        out.append("\nModule ${DeltacordConstants.LOADER_VERSION} · Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})\n")
+        out.append("\nModule ${DeltacordConstants.LOADER_VERSION} · Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}\n")
+        out.append(StartupRecovery.describe()).append('\n')
         BuiltinFont.problem?.let { out.append("Built-in font didn't load: ").append(it).append('\n') }
 
         // The UI thread: if it's stuck, nothing on screen can change.

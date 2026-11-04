@@ -13,3 +13,6 @@ build
 .externalNativeBuild
 .cxx
 local.properties
+
+# Downloaded at build time (the module's built-in copy of Deltacord)
+app/src/main/assets/deltacord.bundle

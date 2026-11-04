@@ -58,6 +58,10 @@ jobs:
             echo "::notice::No keystore available, release APK will be unsigned."
           fi
 
+      - name: Build in a copy of Deltacord
+        # The fallback the module runs when the download is missing, blocked or won't start.
+        run: curl -fsSL --retry 3 -o app/src/main/assets/deltacord.bundle https://github.com/Narehatechi/deltacord-bundle/releases/latest/download/deltacord.min.js
+
       - name: Build and test
         env:
           KEYSTORE_FILE: ${{ steps.keystore.outputs.file }}

@@ -60,6 +60,7 @@ class Main : IXposedHookLoadPackage, IXposedHookZygoteInit {
         playDeliveryFix,
         startupAnimation,
         freezeWatchdog,
+        startupRecovery,
         discordDevSupport,
         additionalBridgeMethods,
         nativeSound,
