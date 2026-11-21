@@ -65,6 +65,11 @@ internal object ModuleReport {
         out.append("Running for ").append((System.currentTimeMillis() - processStart) / 1000).append("s\n")
         out.append(runCatching { StuckReport.build(dataDir, processStart, evenIfReady = true) }.getOrNull() ?: "(no startup record)")
 
+        section(out, "Fonts")
+        out.append(io.github.deltacord.xposed.tweaks.legacy.appearance.FontReport.describe()).append('\n')
+        out.append("Font names Discord asked for:\n")
+        readFile(out, File(files, "font-families.txt"))
+
         section(out, "Last stuck launch")
         readFile(out, File(files, "freeze-report.txt"))
 

@@ -40,15 +40,42 @@ val fonts by tweak {
     // ReactFontManager hijack runs regardless of fonts.json presence  it falls back to the default Typeface chain if no custom font file is found.
     val clazz = classLoader.loadClassOrNull($$"com.facebook.react.common.assets.ReactFontManager$Companion")
         ?: classLoader.loadClassOrNull($$"com.facebook.react.views.text.ReactFontManager$Companion")
-    
-    clazz!!.method("createAssetTypeface", String::class.java, Int::class.java, AssetManager::class.java).hook {
-        before {
-            val fontFamilyName: String = args[0].toString()
-            val style: Int = args[1] as Int
-            val assetManager: AssetManager = args[2] as AssetManager
-            result = FontsState.createAssetTypeface(fontFamilyName, style, assetManager)
+
+    // Where React Native turns a font name into a font file. Discord's React Native version can
+    // move or rename this, so a missing method only loses this route, not the whole font patch.
+    runCatching {
+        clazz!!.method("createAssetTypeface", String::class.java, Int::class.java, AssetManager::class.java).hook {
+            before {
+                val fontFamilyName: String = args[0].toString()
+                val style: Int = args[1] as Int
+                val assetManager: AssetManager = args[2] as AssetManager
+                result = FontsState.createAssetTypeface(fontFamilyName, style, assetManager)
+            }
+        }
+    }.onFailure { log.w("createAssetTypeface not found; using the getTypeface route only", it) }
+
+    // Every way React Native hands out a font (getTypeface and friends, which also cache fonts):
+    // Determination for Discord's text fonts, whatever Discord calls them now. This keeps the
+    // theme font working when Discord renames its fonts or changes how it loads them.
+    var hooked = 0
+    for (name in listOf("com.facebook.react.common.assets.ReactFontManager", "com.facebook.react.views.text.ReactFontManager")) {
+        val manager = classLoader.loadClassOrNull(name) ?: continue
+        for (m in manager.declaredMethods) {
+            if (m.returnType != Typeface::class.java || m.parameterTypes.firstOrNull() != String::class.java) continue
+            runCatching {
+                m.hook {
+                    before {
+                        val family = args[0]?.toString() ?: return@before
+                        FontsState.noteFamily(family)
+                        FontsState.builtinFor(family)?.let { result = it }
+                    }
+                }
+                hooked++
+            }
         }
     }
+    log.i("Font hooks: createAssetTypeface ${if (clazz != null) "found" else "missing"}, $hooked getTypeface routes")
+    FontReport.hooks = "createAssetTypeface ${if (clazz != null) "found" else "missing"}, $hooked getTypeface routes"
 
     withAppContext { ctx ->
         val dataDir = ctx.dataDir.absolutePath
@@ -66,9 +93,11 @@ val fonts by tweak {
             ?: (if (DeterminationFont.wantedByTheme(dataDir)) DeterminationFont.definition() else null)
             ?: return@withAppContext
         val setName = fontDef.name ?: return@withAppContext
+        FontReport.chosen = "$setName (${if (chosen?.name != null) "chosen in Deltacord" else "from a Deltacord theme"})"
 
         val downloadsDir = File(dataDir, "${DeltacordConstants.FILES_DIR}/downloads/fonts").apply { ensureDir() }
         val setDir = File(downloadsDir, setName).apply { ensureDir() }
+        FontsState.familiesFile = File(dataDir, "${DeltacordConstants.FILES_DIR}/font-families.txt").apply { delete() }
         FontsState.fontsDownloadsDir = downloadsDir
         FontsState.fontsAbsPath = setDir.absolutePath + "/"
 
@@ -93,6 +122,7 @@ val fonts by tweak {
             if (builtin == null) log.w("Built-in Determination font unavailable: ${io.github.deltacord.xposed.tweaks.BuiltinFont.problem}")
             FontsState.builtinKeys = fontDef.main.keys
             FontsState.builtin = builtin
+            FontReport.builtin = if (builtin != null) "loaded" else "FAILED: ${io.github.deltacord.xposed.tweaks.BuiltinFont.problem}"
         }
 
         val pending = fontDef.main.filter { (name, url) ->
@@ -120,6 +150,15 @@ val fonts by tweak {
     }
 }
 
+/** What the font patch did this launch, for the Manager's report. */
+internal object FontReport {
+    @Volatile var hooks = "not set up"
+    @Volatile var chosen = "none (Discord's own font)"
+    @Volatile var builtin = "not needed"
+
+    fun describe() = "Font: $chosen\nBuilt-in Determination: $builtin\nHooks: $hooks"
+}
+
 /**
  * Holds the per-process font-state used by the `createAssetTypeface` hijack. Mirrors the static
  * fields of the old `FontsModule`.
@@ -142,13 +181,40 @@ private object FontsState {
     @Volatile
     var builtinKeys: Set<String> = emptySet()
 
+    /** Where the font names Discord asks for are written down (for reports). */
+    @Volatile
+    var familiesFile: File? = null
+    private val seen = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /**
+     * Determination, if it's on and [family] is one of Discord's text fonts. Discord's fonts have
+     * been renamed before (gg sans, ABC Ginto, ...), so they're recognised by pattern, not only by
+     * exact name. Icon and emoji fonts, and Noto (other scripts), always keep their own font.
+     */
+    fun builtinFor(family: String): Typeface? {
+        val typeface = builtin ?: return null
+        if (family in builtinKeys) return typeface
+        val f = family.lowercase()
+        if (KEEP.any { it in f }) return null
+        return if (TEXT.any { it in f }) typeface else null
+    }
+
+    private val KEEP = listOf("icon", "emoji", "symbol", "material", "awesome", "glyph", "noto", "monospace-system")
+    private val TEXT = listOf("ggsans", "gg sans", "gg-sans", "ggmono", "gg mono", "ginto", "whitney", "discord", "sans", "serif", "mono", "display", "text")
+
+    fun noteFamily(family: String) {
+        if (seen.size > 60 || !seen.add(family)) return
+        runCatching { familiesFile?.appendText("$family -> ${if (builtinFor(family) != null) "Determination" else "kept"}\n") }
+    }
+
     fun createAssetTypeface(
         rawName: String,
         style: Int,
         assetManager: AssetManager,
     ): Typeface? {
         val fontFamilyNames = rawName.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toTypedArray()
-        builtin?.let { typeface -> if (fontFamilyNames.any { it in builtinKeys }) return typeface }
+        fontFamilyNames.forEach { noteFamily(it) }
+        fontFamilyNames.firstNotNullOfOrNull { builtinFor(it) }?.let { return it }
 
         var fontFamilyName = rawName
         if (fontFamilyNames.size > 1) {
