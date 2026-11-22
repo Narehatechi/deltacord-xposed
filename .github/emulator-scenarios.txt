@@ -1,0 +1,7 @@
+# One scenario per line: a name, then the plugins to switch on (none = Deltacord's defaults).
+defaults
+all deltacord.messagelogger deltacord.tweaks deltacord.hiddenchannels deltacord.cleanlinks deltacord.betterembeds deltacord.noreplyping deltacord.hideblocked deltacord.alwaystrust deltacord.freeemojis deltacord.funcommands deltacord.fancytext deltacord.translate deltacord.dictionary deltacord.calculator deltacord.reminders deltacord.keywords deltacord.textreplace deltacord.typewriter bunny.quickinstall bunny.badges
+hideblocked deltacord.hideblocked
+freeemojis deltacord.freeemojis
+fancytext deltacord.fancytext
+dictionary deltacord.dictionary
