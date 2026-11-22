@@ -85,8 +85,26 @@ val fonts by tweak {
                 val replacement = FontsState.everywhere ?: return@before
                 if (args[0] !== replacement) args[0] = replacement
             }
+            after {
+                // Your letter spacing (Fonts > Letter spacing), for text that never sets its own.
+                val spacing = FontsState.spacing
+                if (spacing != 0f && FontsState.everywhere != null) {
+                    val paint = thisObject as? android.graphics.Paint ?: return@after
+                    if (paint.letterSpacing == 0f) paint.letterSpacing = 0f // goes through the hook below
+                }
+            }
         }
     }.onFailure { log.e("Couldn't hook Paint.setTypeface", it) }.isSuccess
+
+    // Letter spacing: whatever spacing Discord asks for, plus yours (in ems; negative = tighter).
+    runCatching {
+        android.graphics.Paint::class.java.getDeclaredMethod("setLetterSpacing", Float::class.javaPrimitiveType).hook {
+            before {
+                val spacing = FontsState.spacing
+                if (spacing != 0f && FontsState.everywhere != null) args[0] = (args[0] as Float) + spacing
+            }
+        }
+    }.onFailure { log.e("Couldn't hook Paint.setLetterSpacing", it) }
 
     log.i("Font hooks: createAssetTypeface ${if (clazz != null) "found" else "missing"}, $hooked getTypeface routes, Paint route ${if (paintRoute) "on" else "FAILED"}")
     FontReport.hooks = "createAssetTypeface ${if (clazz != null) "found" else "missing"}, $hooked getTypeface routes, all text (Paint) ${if (paintRoute) "hooked" else "FAILED"}"
@@ -107,6 +125,9 @@ val fonts by tweak {
             ?: (if (DeterminationFont.wantedByTheme(dataDir)) DeterminationFont.definition() else null)
             ?: return@withAppContext
         val setName = fontDef.name ?: return@withAppContext
+        FontsState.spacing = runCatching {
+            File(dataDir, "${DeltacordConstants.FILES_DIR}/font-spacing.txt").readText().trim().toFloat().coerceIn(-0.2f, 0.3f)
+        }.getOrDefault(0f)
         FontReport.chosen = "$setName (${if (chosen?.name != null) "chosen in Deltacord" else "from a Deltacord theme"})"
 
         val downloadsDir = File(dataDir, "${DeltacordConstants.FILES_DIR}/downloads/fonts").apply { ensureDir() }
@@ -194,8 +215,10 @@ internal object FontReport {
     @Volatile var chosen = "none (Discord's own font)"
     @Volatile var builtin = "not needed"
 
-    fun describe() = "Font: $chosen\nBuilt-in Determination: $builtin\nHooks: $hooks"
+    fun describe() = "Font: $chosen\nBuilt-in Determination: $builtin\nHooks: $hooks\nLetter spacing: ${FontsStateSpacing()}"
 }
+
+private fun FontsStateSpacing() = FontsState.spacing.let { if (it == 0f) "the font's own" else "$it em" }
 
 /**
  * Holds the per-process font-state used by the `createAssetTypeface` hijack. Mirrors the static
@@ -222,6 +245,10 @@ private object FontsState {
     /** Determination for every piece of text (set when Deltacord's Determination is on). */
     @Volatile
     var everywhere: Typeface? = null
+
+    /** Extra letter spacing in ems from Fonts > Letter spacing (negative = tighter); 0 = the font's own. */
+    @Volatile
+    var spacing: Float = 0f
 
     /** Where the font names Discord asks for are written down (for reports). */
     @Volatile
