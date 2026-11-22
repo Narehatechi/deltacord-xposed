@@ -19,7 +19,7 @@ on:
     branches: [emulator-test]
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: emulator-${{ github.ref }}
@@ -31,7 +31,7 @@ jobs:
     timeout-minutes: 45
     env:
       DISCORD: ${{ inputs.discord || '354012' }}
-      BUNDLE_URL: ${{ inputs.bundle_url || '' }}
+      BUNDLE_URL: ${{ inputs.bundle_url || vars.EMULATOR_BUNDLE_URL || '' }}
       WAIT: ${{ inputs.wait || '100' }}
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -46,7 +46,11 @@ jobs:
 
       - name: Build in a copy of Deltacord
         run: |
-          url="${BUNDLE_URL:-https://github.com/Narehatechi/deltacord-bundle/releases/latest/download/deltacord.min.js}"
+          # Which Deltacord to test: the workflow input, else .github/emulator-bundle.txt, else the released one.
+          pinned=$(grep -v '^#' .github/emulator-bundle.txt 2>/dev/null | head -1 | tr -d '[:space:]')
+          url="${BUNDLE_URL:-${pinned:-https://github.com/Narehatechi/deltacord-bundle/releases/latest/download/deltacord.min.js}}"
+          echo "Testing bundle: $url"
+          echo "BUNDLE_URL=$url" >> "$GITHUB_ENV"
           curl -fsSL --retry 3 -o app/src/main/assets/deltacord.bundle "$url"
 
       - name: Build the module
@@ -101,3 +105,17 @@ jobs:
           name: emulator-results
           path: results
           if-no-files-found: warn
+
+      # Screenshots and records on a branch of their own, so they can be looked at from anywhere.
+      - name: Publish the results
+        if: always()
+        run: |
+          [ -d results ] || exit 0
+          echo "Run ${{ github.run_id }} · Discord $DISCORD · bundle ${BUNDLE_URL:-released} · $(date -u +%FT%TZ)" > results/RUN.txt
+          cd results
+          git init -q -b emulator-results
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Emulator results for run ${{ github.run_id }}"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" emulator-results

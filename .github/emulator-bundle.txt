@@ -1,0 +1,1 @@
+https://github.com/Narehatechi/deltacord-bundle/releases/download/v1.41.0/deltacord.min.js

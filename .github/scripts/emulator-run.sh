@@ -14,6 +14,14 @@ echo "== Installing"
 adb install-multiple -r -g patched/*.apk 2>&1 | tee results/install.txt
 adb shell pm list packages | grep -c "$PKG" || { echo "::error::Discord didn't install"; exit 1; }
 
+# Point the module at the bundle being tested (it downloads the released one otherwise).
+if [ -n "${BUNDLE_URL:-}" ]; then
+  uid=$(adb shell stat -c %u /data/data/$PKG | tr -d '\r')
+  adb shell "mkdir -p /data/data/$PKG/files/pyoncord && echo '{\"customLoadUrl\":{\"enabled\":true,\"url\":\"$BUNDLE_URL\"}}' > /data/data/$PKG/files/pyoncord/loader.json && chown -R $uid:$uid /data/data/$PKG/files && restorecon -R /data/data/$PKG/files"
+  echo "== Bundle: $BUNDLE_URL"
+  adb shell "cat /data/data/$PKG/files/pyoncord/loader.json"
+fi
+
 adb logcat -c
 adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
 echo "== Launched"
