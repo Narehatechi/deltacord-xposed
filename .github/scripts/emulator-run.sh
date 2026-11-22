@@ -56,13 +56,16 @@ scenario() { # name, plugins...
   if [ -n "${BUNDLE_URL:-}" ]; then
     write_file "$DATA/loader.json" "{\"customLoadUrl\":{\"enabled\":true,\"url\":\"$BUNDLE_URL\"}}"
   fi
-  local plugins=()
+  local plugins=() flags=""
   for word in "$@"; do
     case "$word" in
+      +*) flags+="${word#+} " ;;
       -*) a shell "rm -f $DATA/${word#-}"; echo "   deleted ${word#-}" ;;
       *) plugins+=("$word") ;;
     esac
   done
+  # Experiments for a debug build of Deltacord (words starting with +).
+  if [ -n "$flags" ]; then write_file "$DATA/debug-flags.txt" "$flags"; echo "   flags: $flags"; else a shell "rm -f $DATA/debug-flags.txt"; fi
   set -- "${plugins[@]+"${plugins[@]}"}"
   if [ "$#" -gt 0 ]; then
     local json="{" first=1

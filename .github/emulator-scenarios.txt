@@ -1,6 +1,9 @@
-# One scenario per line: a name, then the plugins to switch on (none = Deltacord's defaults).
-# A word starting with "-" is a file under pyoncord/ to delete before that launch.
-second
-third
-notheme -current-theme.json
-nofont -fonts.json
+first
+base
+nojs +nojs
+nostorage +nostorage
+noresolver +noresolver
+unregister +unregister
+retheme +retheme
+switch +switch
+after

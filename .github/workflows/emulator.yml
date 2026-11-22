@@ -47,11 +47,31 @@ jobs:
       - name: Build in a copy of Deltacord
         run: |
           # Which Deltacord to test: the workflow input, else .github/emulator-bundle.txt, else the released one.
+          # "ref:<branch>" in that file builds that branch of deltacord-bundle here.
           pinned=$(grep -v '^#' .github/emulator-bundle.txt 2>/dev/null | head -1 | tr -d '[:space:]')
           url="${BUNDLE_URL:-${pinned:-https://github.com/Narehatechi/deltacord-bundle/releases/latest/download/deltacord.min.js}}"
+          case "$url" in
+            ref:*)
+              ref="${url#ref:}"
+              git clone -q --depth 1 -b "$ref" https://github.com/Narehatechi/deltacord-bundle bundle-src
+              curl -fsSL https://bun.sh/install | bash >/dev/null 2>&1
+              (cd bundle-src && ~/.bun/bin/bun install --frozen-lockfile >/dev/null && ~/.bun/bin/bun run build --build-minify)
+              ls -la bundle-src/dist
+              # Published on a branch so the patched app can download it like a release.
+              mkdir pub && cp bundle-src/dist/deltacord.min.js pub/ && cd pub
+              git init -q -b emulator-bundle
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git add -A && git commit -q -m "Test bundle from $ref"
+              git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" emulator-bundle
+              url="https://raw.githubusercontent.com/${{ github.repository }}/$(git rev-parse HEAD)/deltacord.min.js"
+              cd ..
+              sleep 5
+              ;;
+          esac
           echo "Testing bundle: $url"
           echo "BUNDLE_URL=$url" >> "$GITHUB_ENV"
-          curl -fsSL --retry 3 -o app/src/main/assets/deltacord.bundle "$url"
+          curl -fsSL --retry 5 --retry-all-errors -o app/src/main/assets/deltacord.bundle "$url"
 
       - name: Build the module
         run: ./gradlew :app:assembleDebug --no-daemon -q
