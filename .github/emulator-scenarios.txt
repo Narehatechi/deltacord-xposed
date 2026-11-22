@@ -1,9 +1,5 @@
-first
 base
-nojs +nojs
-nostorage +nostorage
-noresolver +noresolver
-unregister +unregister
-retheme +retheme
-switch +switch
-after
+noget +noget
+noset +noset
+safe +safe
+authget +authget
