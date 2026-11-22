@@ -22,6 +22,15 @@ uid=$(adb shell stat -c %u /data/data/$PKG | tr -d '\r')
 # would otherwise swallow the scenario list being read).
 a() { timeout 40 adb "$@" < /dev/null; }
 
+alive() {
+  if ! timeout 20 adb get-state < /dev/null >/dev/null 2>&1; then
+    echo "!! The emulator isn't answering; reconnecting"
+    adb kill-server >/dev/null 2>&1; adb start-server >/dev/null 2>&1; sleep 5
+    timeout 60 adb wait-for-device < /dev/null || echo "!! Still gone"
+    adb devices -l < /dev/null
+  fi
+}
+
 quiet_dialogs() {
   a shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1 || true
   # "isn't responding" boxes belong to the system: dumpsys names them without waiting for the UI to idle.
@@ -41,6 +50,7 @@ write_file() { # path, contents
 scenario() { # name, plugins...
   local name="$1"; shift
   echo "== Scenario: $name ($*)"
+  alive
   a shell am force-stop $PKG
   a shell "rm -f $DATA/deltacord-startup.json"
   if [ -n "${BUNDLE_URL:-}" ]; then

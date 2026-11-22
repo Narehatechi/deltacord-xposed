@@ -1,1 +1,2 @@
 # The Deltacord bundle to test (a URL). Empty = the released one.
+https://github.com/Narehatechi/deltacord-bundle/releases/download/v1.42.0/deltacord.min.js
