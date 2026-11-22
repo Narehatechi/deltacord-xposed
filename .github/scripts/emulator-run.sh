@@ -26,8 +26,7 @@ quiet_dialogs() {
   a shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1 || true
   # "isn't responding" boxes belong to the system: dumpsys names them without waiting for the UI to idle.
   if a shell dumpsys window windows 2>/dev/null | grep -q "Application Not Responding"; then
-    a shell input keyevent KEYCODE_ENTER >/dev/null 2>&1 || true
-    a shell input keyevent KEYCODE_BACK >/dev/null 2>&1 || true
+    a shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1 || true
   fi
 }
 
@@ -47,6 +46,14 @@ scenario() { # name, plugins...
   if [ -n "${BUNDLE_URL:-}" ]; then
     write_file "$DATA/loader.json" "{\"customLoadUrl\":{\"enabled\":true,\"url\":\"$BUNDLE_URL\"}}"
   fi
+  local plugins=()
+  for word in "$@"; do
+    case "$word" in
+      -*) a shell "rm -f $DATA/${word#-}"; echo "   deleted ${word#-}" ;;
+      *) plugins+=("$word") ;;
+    esac
+  done
+  set -- "${plugins[@]+"${plugins[@]}"}"
   if [ "$#" -gt 0 ]; then
     local json="{" first=1
     for p in "$@"; do
@@ -75,6 +82,8 @@ scenario() { # name, plugins...
   a logcat -d > "results/$name-logcat.txt" 2>/dev/null || true
   a shell "cat $DATA/deltacord-startup.json" > "results/$name-startup.json" 2>/dev/null || true
   a shell "cat $DATA/plugins/settings.json" > "results/$name-plugins.json" 2>/dev/null || true
+  a shell "ls -laR /data/data/$PKG/files/pyoncord /data/data/$PKG/cache/deltacord" > "results/$name-files.txt" 2>&1 || true
+  a shell "cat $DATA/current-theme.json" 2>/dev/null | head -c 400 > "results/$name-theme-head.txt" || true
   if grep -q "Log In" "results/$name-text.txt"; then verdict="LOGIN SCREEN"; else verdict="STUCK? ($(head -3 "results/$name-text.txt" | tr '\n' '|'))"; fi
   echo "RESULT $name: $verdict" | tee -a results/SUMMARY.txt
   grep -iE "ReactNativeJS.*(error|TypeError|undefined is not|cannot read)" "results/$name-logcat.txt" | head -8
