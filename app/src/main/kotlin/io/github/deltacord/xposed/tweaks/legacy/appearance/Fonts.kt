@@ -144,14 +144,36 @@ val fonts by tweak {
             !(DeterminationFont.isDeterminationUrl(url) && DeterminationFont.install(modulePath, File(setDir, "$name.ttf"), log))
         }
 
+        // Any other font you chose (imported from your phone or a link) goes on all text too,
+        // through the same Paint route as Determination, once its file is on the phone.
+        fun useChosenFontEverywhere() {
+            if (FontsState.builtin != null) return
+            val file = (fontDef.main.keys.sortedBy { if (it == "ggsans-Normal") 0 else 1 })
+                .flatMap { key -> FontsState.FILE_EXTENSIONS.map { File(setDir, "$key$it") } }
+                .firstOrNull { it.exists() && it.length() > 1000 } ?: return
+            try {
+                FontsState.everywhere = Typeface.createFromFile(file)
+                FontReport.builtin = "your font ($setName) on all text"
+            } catch (e: Throwable) {
+                log.e("Couldn't load your font ${file.name}", e)
+                FontReport.builtin = "your font ($setName) FAILED to load: ${e.message}"
+            }
+        }
+        useChosenFontEverywhere()
+
         CoroutineScope(Dispatchers.IO).launch {
             pending.entries.map { (name, url) ->
                 async {
                     try {
                         log.i("Downloading $name from $url")
-                        val ext = FontsState.FILE_EXTENSIONS.firstOrNull { url.endsWith(it) } ?: ".ttf"
+                        val ext = FontsState.FILE_EXTENSIONS.firstOrNull { url.substringBefore('?').endsWith(it) } ?: ".ttf"
                         val file = File(setDir, "$name$ext").apply { ensureFile() }
-                        if (file.exists()) return@async
+                        if (file.exists() && file.length() > 0) return@async
+                        if (url.startsWith("file://")) {
+                            // A font imported from the phone: copy it into place.
+                            File(url.removePrefix("file://")).copyTo(file, overwrite = true)
+                            return@async
+                        }
                         val response: HttpResponse = httpClient.get(url)
                         if (response.status == HttpStatusCode.OK) {
                             file.writeBytes(response.body())
@@ -161,6 +183,7 @@ val fonts by tweak {
                     }
                 }
             }.awaitAll()
+            useChosenFontEverywhere()
         }
     }
 }
@@ -340,7 +363,7 @@ private object DeterminationFont {
     /** A Deltacord built-in theme is on and "Determination font with Deltacord's themes" isn't off. */
     fun wantedByTheme(dataDir: String): Boolean = try {
         val theme = File(dataDir, "${DeltacordConstants.FILES_DIR}/current-theme.json")
-        val builtin = theme.exists() && org.json.JSONObject(theme.readText()).optString("id").startsWith("deltacord://builtin/")
+        val builtin = theme.exists() && org.json.JSONObject(theme.readText()).optString("id").let { it.startsWith("deltacord://builtin/") || it.startsWith("deltacord://custom/") }
         val extras = File(dataDir, "files/vd_mmkv/DELTACORD_EXTRAS")
         val enabled = !extras.exists() || org.json.JSONObject(extras.readText()).optBoolean("themeFont", true)
         builtin && enabled
