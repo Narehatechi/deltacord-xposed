@@ -28,7 +28,7 @@ concurrency:
 jobs:
   emulator:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 40
     env:
       DISCORD: ${{ inputs.discord || '354012' }}
       BUNDLE_URL: ${{ inputs.bundle_url || vars.EMULATOR_BUNDLE_URL || '' }}
