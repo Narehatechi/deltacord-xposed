@@ -74,8 +74,22 @@ val fonts by tweak {
             }
         }
     }
-    log.i("Font hooks: createAssetTypeface ${if (clazz != null) "found" else "missing"}, $hooked getTypeface routes")
-    FontReport.hooks = "createAssetTypeface ${if (clazz != null) "found" else "missing"}, $hooked getTypeface routes"
+    // The route that always works: every bit of text Discord draws sets its font on an Android
+    // Paint, whatever Discord calls its fonts and however its (minified, new-architecture) React
+    // Native loads them. With Deltacord's Determination on, that font becomes Determination.
+    // Characters Determination doesn't have (emoji, other scripts) still fall back to Android's
+    // fonts, so nothing turns into boxes.
+    val paintRoute = runCatching {
+        android.graphics.Paint::class.java.getDeclaredMethod("setTypeface", Typeface::class.java).hook {
+            before {
+                val replacement = FontsState.everywhere ?: return@before
+                if (args[0] !== replacement) args[0] = replacement
+            }
+        }
+    }.onFailure { log.e("Couldn't hook Paint.setTypeface", it) }.isSuccess
+
+    log.i("Font hooks: createAssetTypeface ${if (clazz != null) "found" else "missing"}, $hooked getTypeface routes, Paint route ${if (paintRoute) "on" else "FAILED"}")
+    FontReport.hooks = "createAssetTypeface ${if (clazz != null) "found" else "missing"}, $hooked getTypeface routes, all text (Paint) ${if (paintRoute) "hooked" else "FAILED"}"
 
     withAppContext { ctx ->
         val dataDir = ctx.dataDir.absolutePath
@@ -122,6 +136,7 @@ val fonts by tweak {
             if (builtin == null) log.w("Built-in Determination font unavailable: ${io.github.deltacord.xposed.tweaks.BuiltinFont.problem}")
             FontsState.builtinKeys = fontDef.main.keys
             FontsState.builtin = builtin
+            FontsState.everywhere = builtin
             FontReport.builtin = if (builtin != null) "loaded" else "FAILED: ${io.github.deltacord.xposed.tweaks.BuiltinFont.problem}"
         }
 
@@ -180,6 +195,10 @@ private object FontsState {
 
     @Volatile
     var builtinKeys: Set<String> = emptySet()
+
+    /** Determination for every piece of text (set when Deltacord's Determination is on). */
+    @Volatile
+    var everywhere: Typeface? = null
 
     /** Where the font names Discord asks for are written down (for reports). */
     @Volatile
