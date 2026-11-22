@@ -120,6 +120,10 @@ private class DrawGate(
             if (StartupAnimation.waitingForDiscord) return true
             // A recreated screen waiting for a "ready" Discord already sent: don't hold it forever.
             if (fromLauncherCreate && StartupAnimation.discordStarted) return true
+            // Deltacord saw Discord's screen become ready (connected, or the login screen when
+            // logged out) a while ago, but Discord still holds its logo: a hold that will never
+            // end on its own (logged-out patched installs got stuck on the logo forever).
+            if (StartupAnimation.releaseHold) return true
         } else if (blocked) {
             blocked = false
             StartupAnimation.onDiscordReady()
@@ -142,6 +146,10 @@ private object StartupAnimation {
     /** Deltacord said Discord opened during this launch (so a later logo hold is stale). */
     @Volatile
     var discordStarted = false
+
+    /** Set a few seconds after Discord's screen was ready: stop honouring Discord's logo hold. */
+    @Volatile
+    var releaseHold = false
 
     @Volatile
     var creatingLauncher = false
@@ -389,6 +397,21 @@ private object StartupAnimation {
         val animation = view ?: return
         view = null
         waitingForDiscord = false
+        // If Discord's screen is ready (Deltacord said so) but Discord keeps its logo up, draw
+        // Discord anyway after a short grace, so a logged-out install shows the login screen.
+        val root = animation.rootView
+        handler.postDelayed({
+            val launch = StuckReport.thisLaunch(dataDir, processStart)
+            if (launch?.optBoolean("uiReady") == true || force) {
+                val held = synchronized(gates) { gates.values.any { it.blocked } }
+                if (held) {
+                    log?.w("Discord's screen is ready but its logo hold didn't end: drawing Discord anyway")
+                }
+                releaseHold = true
+                root.invalidate()
+                root.requestLayout()
+            }
+        }, 3_000)
         animation.animate()
             .alpha(0f)
             .setDuration(if (force) 200 else 450)
