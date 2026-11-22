@@ -1,1 +1,1 @@
-ref:stuck-debug
+https://github.com/Narehatechi/deltacord-bundle/releases/download/v1.42.1/deltacord.min.js
