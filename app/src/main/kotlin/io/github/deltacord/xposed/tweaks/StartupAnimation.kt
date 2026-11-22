@@ -255,9 +255,15 @@ private object StartupAnimation {
         }.getOrNull()
         val random = java.util.Random()
         val style = StartupStyles.pickStyle(setting, random)
-        val palette = StartupStyles.pickPalette(random)
-        log?.i("Startup animation: $style in ${palette.id}")
-        return StartupScene(style, palette, random.nextInt(10_000), activity.resources.displayMetrics.density)
+        // Your own word, credit and colours from Deltacord's animation editor, if you made them.
+        val custom = runCatching {
+            org.json.JSONObject(File(dataDir, "${DeltacordConstants.FILES_DIR}/startup-animation.json").readText())
+        }.getOrNull()
+        val palette = (StartupStyles.customPalette(custom) ?: StartupStyles.pickPalette(random))
+            .let { p -> StartupStyles.creditOf(custom)?.let(p::withCredit) ?: p }
+        val word = custom?.optString("text")?.let(StartupStyles::cleanText)?.takeIf { it.isNotEmpty() } ?: "DELTACORD"
+        log?.i("Startup animation: $style in ${palette.id}, \"$word\"")
+        return StartupScene(style, palette, random.nextInt(10_000), activity.resources.displayMetrics.density, word)
     }
 
     /** Turns Deltacord's startup record into the status kept for the stuck report. */

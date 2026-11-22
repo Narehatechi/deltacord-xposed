@@ -28,7 +28,9 @@ internal class StartupPalette(
     val shine: IntArray,
     val credit: String = "by Narehatechi",
     val rare: Boolean = false,
-)
+) {
+    fun withCredit(text: String) = StartupPalette(id, glow, sparks, shine, if (rare) "* $text *" else text, rare)
+}
 
 /** The start-up animation styles and colour variants, and picking one for a launch. */
 internal object StartupStyles {
@@ -78,6 +80,31 @@ internal object StartupStyles {
         else -> DEFAULT
     }
 
+    /** Letters the animation can draw (printable ASCII), upper-cased, at most 14. */
+    fun cleanText(text: String): String =
+        text.uppercase().filter { it in ' '..'~' }.trim().replace(Regex(" +"), " ").take(14)
+
+    private fun color(value: String?): Int? = runCatching { if (value.isNullOrBlank()) null else Color.parseColor(value) }.getOrNull()
+
+    /**
+     * Your own colours from Deltacord's animation editor: "glow" (the glow, motes and fountain)
+     * and up to four "sparks" (sparkles, bursts, the shine). Null when you haven't set any.
+     */
+    fun customPalette(config: org.json.JSONObject?): StartupPalette? {
+        config ?: return null
+        val glow = color(config.optString("glow").takeIf { config.optString("colors") == "custom" }) ?: return null
+        val sparkList = config.optJSONArray("sparks")
+        val sparks = (0 until (sparkList?.length() ?: 0)).mapNotNull { color(sparkList?.optString(it)) }.take(4)
+            .ifEmpty { listOf(Color.WHITE, glow) }
+        val all = (sparks + sparks + sparks).take(4).toIntArray()
+        val shine = intArrayOf(Color.WHITE) + sparks.toIntArray() + glow + Color.WHITE
+        return StartupPalette("custom", glow, all, shine)
+    }
+
+    /** Your own credit line from the animation editor (instead of "by Narehatechi"), if you set one. */
+    fun creditOf(config: org.json.JSONObject?): String? =
+        config?.optString("credit")?.filter { it in ' '..'~' }?.trim()?.take(30)?.takeIf { it.isNotEmpty() }
+
     fun pickPalette(random: java.util.Random): StartupPalette =
         if (random.nextInt(50) == 0) GOLD else COMMON[random.nextInt(COMMON.size)]
 }
@@ -91,15 +118,42 @@ internal class StartupScene(
     val palette: StartupPalette,
     private val seed: Int,
     private val density: Float,
+    /** The word the animation spells (your own from Deltacord's animation editor, or DELTACORD). */
+    word: String = "DELTACORD",
 ) {
+    private val WORD = word
+    /** The word in up to three parts, for the styles that bring it in piece by piece. */
+    private val PARTS: Array<String> = when {
+        word == "DELTACORD" -> arrayOf("DEL", "TA", "CORD")
+        word.trim().contains(' ') && word.trim().split(Regex(" +")).size in 2..3 -> {
+            // Words: each with the space before it, so the parts still join into the whole.
+            val words = word.split(Regex("(?= )"))
+            words.toTypedArray()
+        }
+        word.length < 3 -> arrayOf(word)
+        else -> {
+            val a = (word.length + 2) / 3
+            val b = (word.length - a + 1) / 2
+            arrayOf(word.substring(0, a), word.substring(a, a + b), word.substring(a + b))
+        }
+    }
+    private val LINE = "* $word draws near."
+    private val SAVE_LINE = "* The $word fills you with DETERMINATION."
+
+    /** Which part a letter belongs to. */
+    private fun partOf(index: Int): Int {
+        var end = 0
+        PARTS.forEachIndexed { i, part ->
+            end += part.length
+            if (index < end) return i
+        }
+        return PARTS.size - 1
+    }
+
     companion object {
         /** The animation always plays this long before Discord can show. */
         const val PLAY_MS = 6500L
 
-        private const val WORD = "DELTACORD"
-        private val PARTS = arrayOf("DEL", "TA", "CORD")
-        private const val LINE = "* DELTACORD draws near."
-        private const val SAVE_LINE = "* The DELTACORD fills you with DETERMINATION."
         private const val RAIN_CHARS = "DELTACORD*+<>#%&@0123456789"
         private val SOULS = intArrayOf(
             0xFFFF1A2E.toInt(), 0xFFFF8A00.toInt(), 0xFFFFE14D.toInt(), 0xFF33DD55.toInt(),
@@ -966,7 +1020,7 @@ internal class StartupScene(
         line.pathEffect = null
         line.clearShadowLayer()
         WORD.forEachIndexed { i, ch ->
-            val colour = colours[if (i < 3) 0 else if (i < 5) 1 else 2]
+            val colour = colours[partOf(i) % colours.size]
             val on = 500 + rnd(i, 30) * 2000
             var lit = 0f
             if (t >= on + 350) lit = 1f
@@ -1058,6 +1112,7 @@ internal class StartupScene(
     private fun fireworks(canvas: Canvas, t: Float) {
         motes(canvas, t, 30, 0.5f)
         floatArrayOf(900f, 1600f, 2300f).forEachIndexed { i, tb ->
+            if (i >= PARTS.size) return@forEachIndexed
             val pcx = partX[i] + partW[i] / 2
             val launch = tb - 600
             if (t >= launch && t < tb) {
