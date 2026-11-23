@@ -56,10 +56,11 @@ scenario() { # name, plugins...
   if [ -n "${BUNDLE_URL:-}" ]; then
     write_file "$DATA/loader.json" "{\"customLoadUrl\":{\"enabled\":true,\"url\":\"$BUNDLE_URL\"}}"
   fi
-  local plugins=() flags=""
+  local plugins=() flags="" style=""
   for word in "$@"; do
     case "$word" in
       +*) flags+="${word#+} " ;;
+      style=*) style="${word#style=}" ;;
       -*) a shell "rm -f $DATA/${word#-}"; echo "   deleted ${word#-}" ;;
       *) plugins+=("$word") ;;
     esac
@@ -78,8 +79,16 @@ scenario() { # name, plugins...
   else
     a shell "rm -f $DATA/plugins/settings.json"
   fi
+  # A start-up animation style to watch: frames every second or so while it plays.
+  if [ -n "$style" ]; then write_file "$DATA/startup-animation-style" "$style"; echo "   style: $style"; fi
   a logcat -c
   a shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+  if [ -n "$style" ]; then
+    for n in 01 02 03 04 05 06 07 08 09 10 11 12 13 14; do
+      timeout 20 adb exec-out screencap -p > "results/$name-frame$n.png" 2>/dev/null || true
+      sleep 0.4
+    done
+  fi
   for t in 20 45 "$WAIT"; do
     sleep $(( t == 20 ? 20 : (t == 45 ? 25 : WAIT - 45) ))
     quiet_dialogs

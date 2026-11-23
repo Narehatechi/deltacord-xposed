@@ -14,7 +14,7 @@ on:
         default: ""
       wait:
         description: Seconds to watch after launch
-        default: "70"
+        default: "46"
   push:
     branches: [emulator-test]
 
@@ -32,7 +32,7 @@ jobs:
     env:
       DISCORD: ${{ inputs.discord || '354012' }}
       BUNDLE_URL: ${{ inputs.bundle_url || vars.EMULATOR_BUNDLE_URL || '' }}
-      WAIT: ${{ inputs.wait || '70' }}
+      WAIT: ${{ inputs.wait || '46' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
