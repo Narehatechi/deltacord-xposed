@@ -322,7 +322,8 @@ internal class StartupScene(
 
     /** A soft round glow. */
     private fun glowDot(canvas: Canvas, gx: Float, gy: Float, r: Float, color: Int, a: Float) {
-        if (a <= 0f || r <= 0f) return
+        // Nothing smaller than a pixel: a vanishing gradient brought the test emulator down.
+        if (a <= 0f || r < 1f) return
         fill.clearShadowLayer()
         fill.color = Color.WHITE
         fill.shader = RadialGradient(gx, gy, r, withAlpha(color, a), color and 0x00FFFFFF, Shader.TileMode.CLAMP)
@@ -332,7 +333,8 @@ internal class StartupScene(
 
     /** A four-pointed twinkle with thin, tapering arms. */
     private fun twinkle(canvas: Canvas, sx: Float, sy: Float, r: Float, color: Int, a: Float) {
-        if (a <= 0f || r <= 0f) return
+        // Nothing smaller than a pixel: a vanishing gradient brought the test emulator down.
+        if (a <= 0f || r < 1f) return
         segment.rewind()
         segment.moveTo(sx, sy - r)
         segment.quadTo(sx, sy, sx + r, sy)
