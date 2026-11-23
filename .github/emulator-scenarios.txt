@@ -1,5 +1,3 @@
-starchart style=starchart
-badsignal style=badsignal
 eclipse style=eclipse
 blockdrop style=blockdrop
 nightsign style=nightsign
