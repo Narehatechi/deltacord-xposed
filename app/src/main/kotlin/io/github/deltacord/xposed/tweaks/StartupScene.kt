@@ -330,17 +330,20 @@ internal class StartupScene(
         fill.shader = null
     }
 
-    /** A four-pointed twinkle. */
+    /** A four-pointed twinkle with thin, tapering arms. */
     private fun twinkle(canvas: Canvas, sx: Float, sy: Float, r: Float, color: Int, a: Float) {
         if (a <= 0f || r <= 0f) return
-        line.pathEffect = null
-        line.shader = null
-        line.color = withAlpha(color, a)
-        line.strokeWidth = max(density, r * 0.22f)
-        line.setShadowLayer(r * 0.8f, 0f, 0f, color)
-        canvas.drawLine(sx - r, sy, sx + r, sy, line)
-        canvas.drawLine(sx, sy - r, sx, sy + r, line)
-        line.clearShadowLayer()
+        segment.rewind()
+        segment.moveTo(sx, sy - r)
+        segment.quadTo(sx, sy, sx + r, sy)
+        segment.quadTo(sx, sy, sx, sy + r)
+        segment.quadTo(sx, sy, sx - r, sy)
+        segment.quadTo(sx, sy, sx, sy - r)
+        segment.close()
+        fill.shader = null
+        fill.clearShadowLayer()
+        fill.color = withAlpha(color, a)
+        canvas.drawPath(segment, fill)
     }
 
     /** Draws the first [p] of letter [i]'s outline with [line]. */
