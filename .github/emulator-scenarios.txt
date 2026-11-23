@@ -1,4 +1,8 @@
-eclipse style=eclipse
 blockdrop style=blockdrop
 nightsign style=nightsign
 bootlog style=bootlog
+eclipse-bare style=eclipse-bare
+eclipse-notitle style=eclipse-notitle
+eclipse-noring style=eclipse-noring
+eclipse-norays style=eclipse-norays
+eclipse style=eclipse

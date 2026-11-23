@@ -31,7 +31,7 @@ internal class StartupPalette(
 
 /** The start-up animation styles and colour variants, and picking one for a launch. */
 internal object StartupStyles {
-    val IDS = listOf("starchart", "badsignal", "eclipse", "blockdrop", "nightsign", "bootlog")
+    val IDS = listOf("starchart", "badsignal", "eclipse", "blockdrop", "nightsign", "bootlog", "eclipse-bare", "eclipse-notitle", "eclipse-noring", "eclipse-norays")
     const val DEFAULT = "starchart"
 
     private fun c(hex: Long) = hex.toInt()
@@ -109,7 +109,7 @@ internal object StartupStyles {
  * The stage is the screen as it stands, with the word across its width.
  */
 internal class StartupScene(
-    val style: String,
+    styleId: String,
     val palette: StartupPalette,
     private val seed: Int,
     private val density: Float,
@@ -117,6 +117,8 @@ internal class StartupScene(
     word: String = "DELTACORD",
 ) {
     private val WORD = word
+    val style = styleId.substringBefore("-")
+    private val dbg = styleId.substringAfter("-", "")
 
     companion object {
         /** The animation always plays this long before Discord can show. */
@@ -470,10 +472,10 @@ internal class StartupScene(
             "bootlog" -> bootLog(canvas, t)
             else -> starChart(canvas, t)
         }
-        if (t >= timing.sparkle) sparkle(canvas, t, timing.sparkle)
+        if (t >= timing.sparkle && dbg != "bare") sparkle(canvas, t, timing.sparkle)
         canvas.restore()
 
-        credit(canvas, t, timing.credit, w.toFloat(), h.toFloat())
+        if (dbg != "bare") credit(canvas, t, timing.credit, w.toFloat(), h.toFloat())
 
         val flash = impact(t, 200f) / 13 * 0.28f
         if (flash > 0f) canvas.drawColor(withAlpha(palette.glow, flash))
@@ -586,7 +588,7 @@ internal class StartupScene(
 
         // The corona, at its brightest while the sun is fully covered.
         val total = span(t, 2300f, 2900f) * (1 - span(t, 3300f, 3700f) * 0.55f)
-        if (total > 0f) {
+        if (total > 0f && dbg != "norays" && dbg != "bare") {
             line.pathEffect = null
             line.shader = null
             line.clearShadowLayer()
@@ -610,13 +612,13 @@ internal class StartupScene(
 
         // The first light coming back around the edge.
         val ring = span(t, 3300f, 3600f) * (1 - span(t, 3600f, 4600f))
-        if (ring > 0f) {
+        if (ring > 0f && dbg != "noring" && dbg != "bare") {
             glowDot(canvas, sx - r * 0.98f, sy - 8 * k, 60 * k * ring, Color.WHITE, 0.95f)
             twinkle(canvas, sx - r * 0.98f, sy - 8 * k, 44 * k * ring, Color.WHITE, 1f)
         }
 
         val up = easeOut(span(t, 2700f, 3800f))
-        if (up > 0f) glowText(canvas, WORD, x0, y + (1 - up) * 26 * k, up, 0.8f, shadow = 0xFFFFE9B8.toInt())
+        if (up > 0f && dbg != "notitle" && dbg != "bare") glowText(canvas, WORD, x0, y + (1 - up) * 26 * k, up, 0.8f, shadow = 0xFFFFE9B8.toInt())
 
         // Hills along the bottom.
         ground.rewind()
