@@ -31,7 +31,12 @@ internal class StartupPalette(
 
 /** The start-up animation styles and colour variants, and picking one for a launch. */
 internal object StartupStyles {
+<<<<<<< HEAD
     val IDS = listOf("starchart", "badsignal", "eclipse", "blockdrop", "nightsign", "bootlog", "eclipse-bare", "eclipse-notitle", "eclipse-noring", "eclipse-norays")
+=======
+    // "eclipse" is drawn below but not offered yet: it brought the test emulator down partway through.
+    val IDS = listOf("starchart", "badsignal", "blockdrop", "nightsign", "bootlog")
+>>>>>>> jukebox-selftest
     const val DEFAULT = "starchart"
 
     private fun c(hex: Long) = hex.toInt()

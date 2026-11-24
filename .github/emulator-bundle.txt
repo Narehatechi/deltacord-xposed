@@ -1,1 +1,1 @@
-ref:crash-proof
+ref:jukebox-selftest

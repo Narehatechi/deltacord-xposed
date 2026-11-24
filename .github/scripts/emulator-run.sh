@@ -39,6 +39,7 @@ quiet_dialogs() {
   fi
 }
 
+grant_mic() { a shell "pm grant $PKG android.permission.RECORD_AUDIO" >/dev/null 2>&1 || true; }
 write_file() { # path, contents
   local tmp; tmp=$(mktemp); printf '%s' "$2" > "$tmp"
   a shell "mkdir -p $(dirname "$1")"
@@ -56,10 +57,11 @@ scenario() { # name, plugins...
   if [ -n "${BUNDLE_URL:-}" ]; then
     write_file "$DATA/loader.json" "{\"customLoadUrl\":{\"enabled\":true,\"url\":\"$BUNDLE_URL\"}}"
   fi
-  local plugins=() flags="" style=""
+  local plugins=() flags="" style="" files=""
   for word in "$@"; do
     case "$word" in
       +*) flags+="${word#+} " ;;
+      @*) files+="${word#@} " ;;
       style=*) style="${word#style=}" ;;
       -*) a shell "rm -f $DATA/${word#-}"; echo "   deleted ${word#-}" ;;
       *) plugins+=("$word") ;;
@@ -79,8 +81,12 @@ scenario() { # name, plugins...
   else
     a shell "rm -f $DATA/plugins/settings.json"
   fi
+  # Files asking Deltacord to do something (words starting with @).
+  for f in $files; do write_file "$DATA/$f" "1"; echo "   file: $f"; done
+  a shell "rm -f $DATA/jukebox-selftest-result.json $DATA/last-native-crash.txt"
   # A start-up animation style to watch: frames every second or so while it plays.
   if [ -n "$style" ]; then write_file "$DATA/startup-animation-style" "$style"; echo "   style: $style"; fi
+  grant_mic
   a logcat -c
   a shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
   if [ -n "$style" ]; then
@@ -103,6 +109,8 @@ scenario() { # name, plugins...
   grep -o 'text="[^"]*"' "results/$name-ui.xml" | sed 's/text="//; s/"$//' | grep -v '^$' | head -40 > "results/$name-text.txt" || true
   a logcat -d > "results/$name-logcat.txt" 2>/dev/null || true
   a shell "cat $DATA/deltacord-startup.json" > "results/$name-startup.json" 2>/dev/null || true
+  a shell "cat $DATA/jukebox-selftest-result.json" > "results/$name-jukebox.json" 2>/dev/null || true
+  a shell "cat $DATA/last-native-crash.txt" > "results/$name-crash.txt" 2>/dev/null || true
   a shell "cat $DATA/plugins/settings.json" > "results/$name-plugins.json" 2>/dev/null || true
   a shell "ls -laR /data/data/$PKG/files/pyoncord /data/data/$PKG/cache/deltacord" > "results/$name-files.txt" 2>&1 || true
   a shell "cat $DATA/current-theme.json" 2>/dev/null | head -c 400 > "results/$name-theme-head.txt" || true

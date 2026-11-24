@@ -13,6 +13,7 @@ import io.github.deltacord.xposed.methodHook
 import io.github.deltacord.xposed.tweak
 import kotlinx.coroutines.CompletableDeferred
 import java.io.File
+import kotlin.math.roundToInt
 import java.lang.ref.WeakReference
 
 /**
@@ -21,7 +22,6 @@ import java.lang.ref.WeakReference
  * or null if nothing was picked. Used to import sounds without needing a link.
  */
 private const val REQUEST_CODE = 0x0DE17A
-private const val MAX_BYTES = 8L * 1024 * 1024
 
 @Volatile
 private var currentActivity: WeakReference<Activity>? = null
@@ -51,6 +51,10 @@ val nativeFilePicker by tweak {
         val argv = args.asDelegate()
         val mimeType by argv.string("*/*")
         val folder by argv.string("pyoncord/deltacord-sounds")
+        // Optional size limit in megabytes (songs for the jukebox are bigger than sounds).
+        val limitMb by argv.double(8.0)
+        val limit = (limitMb.coerceIn(1.0, 100.0) * 1024 * 1024).toLong()
+        val tooBig = "That file is too big (over ${limitMb.roundToInt()} MB)"
         val activity = currentActivity?.get() ?: throw Error("Open Discord first")
 
         pending?.complete(null)
@@ -78,7 +82,7 @@ val nativeFilePicker by tweak {
                 if (!c.isNull(1)) size = c.getLong(1)
             }
         }
-        if (size > MAX_BYTES) throw Error("That file is too big (over 8 MB)")
+        if (size > limit) throw Error(tooBig)
 
         val safeName = name.replace(Regex("[^A-Za-z0-9._-]"), "_").takeLast(60)
         val target = File(activity.filesDir, "$folder/picked-${System.currentTimeMillis().toString(36)}-$safeName")
@@ -91,10 +95,10 @@ val nativeFilePicker by tweak {
                     val read = input.read(buffer)
                     if (read < 0) break
                     total += read
-                    if (total > MAX_BYTES) {
+                    if (total > limit) {
                         output.close()
                         target.delete()
-                        throw Error("That file is too big (over 8 MB)")
+                        throw Error(tooBig)
                     }
                     output.write(buffer, 0, read)
                 }

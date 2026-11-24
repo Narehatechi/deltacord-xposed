@@ -10,6 +10,7 @@ import io.github.deltacord.bridge.DeltacordBridge
 import io.github.deltacord.xposed.api.HostScope
 import io.github.deltacord.xposed.tweaks.*
 import io.github.deltacord.xposed.tweaks.bridge.nativeSound
+import io.github.deltacord.xposed.tweaks.bridge.micJukebox
 import io.github.deltacord.xposed.tweaks.bridge.nativeFilePicker
 import io.github.deltacord.xposed.tweaks.bridge.nativeImage
 import io.github.deltacord.xposed.tweaks.bridge.nativeCropper
@@ -56,6 +57,7 @@ class Main : IXposedHookLoadPackage, IXposedHookZygoteInit {
         deltacordBundleManifest,
 
         // Consumers
+        crashRecorder,
         recoveryCompanion,
         playDeliveryFix,
         startupAnimation,
@@ -64,6 +66,7 @@ class Main : IXposedHookLoadPackage, IXposedHookZygoteInit {
         discordDevSupport,
         additionalBridgeMethods,
         nativeSound,
+        micJukebox,
         nativeFilePicker,
         nativeImage,
         nativeCropper,
