@@ -111,9 +111,16 @@ private fun java.io.InputStream.readNBytesCompat(limit: Int): ByteArray {
 private fun recordLastExit(app: Context) {
     if (Build.VERSION.SDK_INT < 30) return
     val am = app.getSystemService(ActivityManager::class.java) ?: return
-    val exits = am.getHistoricalProcessExitReasons(app.packageName, 0, 8)
-    // The main process only (Discord's extra processes come and go).
-    val last = exits.firstOrNull { it.processName == app.packageName } ?: return
+    // The main process only (Discord's extra processes come and go), newest first.
+    val exits = am.getHistoricalProcessExitReasons(app.packageName, 0, 16).filter { it.processName == app.packageName }
+    // The most recent time it closed because something went wrong, even if you've reopened and
+    // closed Discord normally since; otherwise just the last time it closed.
+    val bad = setOf(
+        ApplicationExitInfo.REASON_CRASH, ApplicationExitInfo.REASON_CRASH_NATIVE, ApplicationExitInfo.REASON_ANR,
+        ApplicationExitInfo.REASON_LOW_MEMORY, ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE,
+        ApplicationExitInfo.REASON_INITIALIZATION_FAILURE,
+    )
+    val last = exits.firstOrNull { it.reason in bad } ?: exits.firstOrNull() ?: return
     val dir = app.filesDir.resolve("pyoncord").apply { mkdirs() }
     val file = File(dir, "last-exit.txt")
     val stamp = "${last.timestamp}"
@@ -122,7 +129,7 @@ private fun recordLastExit(app: Context) {
     val text = buildString {
         appendLine(stamp)
         appendLine("${java.util.Date(last.timestamp)} · ${reasonName(last.reason)} · ${last.description ?: ""}".trim())
-        appendLine("status ${last.status} · importance ${last.importance} · memory ${last.pss / 1024} MB")
+        appendLine("status ${last.status} · importance ${last.importance} · memory ${last.pss / 1024} MB · ${exits.indexOf(last)} normal closes since")
         append(traceText(last).take(16_000))
     }
     file.writeText(text)
