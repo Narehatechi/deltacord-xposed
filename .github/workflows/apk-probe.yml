@@ -15,7 +15,10 @@ jobs:
           done
           unzip -q -o base.apk 'assets/index.android.bundle' && ls -la assets
           strings -n 6 assets/index.android.bundle > s.txt
-          echo "== soundboard"; grep -E '^[A-Z][A-Za-z0-9]*Soundboard[A-Za-z0-9]*$|^Soundboard[A-Za-z0-9]*(Button|Control)[A-Za-z0-9]*$' s.txt | sort -u | head -60
-          echo "== call controls"; grep -E '^[A-Z][A-Za-z0-9]*(CallControl|VoiceControl|ControlButton|ControlsButton|ActionBar|CallButton|VoicePanel|CallBar|ControlBar|ControlTray|Controls)[A-Za-z0-9]*$' s.txt | sort -u | head -120
-          echo "== screenshare"; grep -E '^[A-Z][A-Za-z0-9]*(ScreenShare|Screenshare)[A-Za-z0-9]*Button[A-Za-z0-9]*$' s.txt | sort -u | head -30
-          echo "== disconnect"; grep -E '^[A-Z][A-Za-z0-9]*(Disconnect|EndCall|HangUp|Hangup)[A-Za-z0-9]*$' s.txt | sort -u | head -30
+          # Hermes keeps its strings packed together, so look for names inside them.
+          look() { echo "== $1"; grep -a -o -E "$2" assets/index.android.bundle | sort | uniq -c | sort -rn | head -${3:-60}; }
+          look soundboard '[A-Z][a-z]+[A-Za-z0-9]*Soundboard[A-Z][A-Za-z0-9]{2,40}|Soundboard[A-Z][A-Za-z0-9]{2,40}'
+          look callcontrols '[A-Za-z0-9]{0,30}(CallControl|VoiceControl|ControlButton|ControlsButton|VoicePanel|CallBar|ControlBar|ControlTray|ActionBar|CallControlsTray|ControlsRow)[A-Za-z0-9]{0,30}' 120
+          look screenshare '[A-Za-z0-9]{0,30}(ScreenShare|Screenshare)[A-Za-z0-9]{0,20}Button[A-Za-z0-9]{0,20}'
+          look disconnect '[A-Za-z0-9]{0,30}(DisconnectButton|EndCallButton|HangUpButton|LeaveCallButton)[A-Za-z0-9]{0,20}'
+          look video '[A-Za-z0-9]{0,30}(VideoButton|CameraButton|MuteButton|MicButton|MicrophoneButton)[A-Za-z0-9]{0,20}'
