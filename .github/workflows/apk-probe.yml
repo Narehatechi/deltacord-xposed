@@ -1,0 +1,25 @@
+name: APK probe
+# One-off: which Android audio classes Discord's voice engine uses for the microphone.
+on:
+  push:
+    branches: [apk-probe]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download and look
+        run: |
+          for mirror in https://tracker.vendetta.rocks https://tracker.vd.nexpid.xyz https://proxy.vd.ushie.dev; do
+            curl -fsSL --retry 2 --max-time 300 -o base.apk "$mirror/tracker/download/354012/base" && break
+          done
+          mkdir dex && cd dex && unzip -q ../base.apk 'classes*.dex' 'lib/*' 2>/dev/null || unzip -q ../base.apk 'classes*.dex'
+          echo "== dex mentions"
+          for w in android/media/AudioRecord WebRtcAudioRecord JavaAudioDeviceModule AAudio OpenSL co/discord/media_engine audio_device AudioRecordThread; do
+            printf '%s: ' "$w"; cat classes*.dex | grep -a -o "$w[A-Za-z0-9_/\$]*" | sort -u | head -8 | tr '\n' ' '; echo
+          done
+          echo "== native libs"
+          unzip -l ../base.apk | grep -E "\.so$" | awk '{print $4}' | head -40
+          for split in config.arm64_v8a; do
+            curl -fsSL --retry 2 -o $split.apk "https://tracker.vendetta.rocks/tracker/download/354012/$split" && unzip -l $split.apk | grep -E "\.so$" | awk '{print $1, $4}'
+            unzip -q -o $split.apk 'lib/*' -d split && for so in split/lib/*/*.so; do n=$(strings "$so" | grep -c -E "AAudio|SLAndroidSimpleBufferQueue|AudioRecord"); [ "$n" -gt 0 ] && echo "$so: $n audio refs: $(strings "$so" | grep -o -E 'AAudioStreamBuilder_[a-zA-Z]+|slCreateEngine|android/media/AudioRecord|WebRtcAudioRecord' | sort -u | tr '\n' ' ')"; done
+          done
