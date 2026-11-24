@@ -38,6 +38,8 @@ import kotlin.math.roundToInt
  *   "music only"), and whether you hear it yourself
  * - `deltacord.jukebox.state()`: what's playing, how far in, and whether Discord's mic is open
  * - `deltacord.jukebox.remove(path)`: deletes an imported file
+ * - `deltacord.jukebox.effect(path)`: plays a short sound effect on top (several can overlap)
+ * - `deltacord.jukebox.stopEffects()`: stops the sound effects that are playing
  */
 val micJukebox by tweak {
     // Every way AudioRecord can be read. The music goes in after Discord's read fills the buffer.
@@ -77,12 +79,26 @@ val micJukebox by tweak {
         val volume by argv.double(1.0)
         val voice by argv.double(1.0)
         val hear by argv.boolean(true)
+        val effects by argv.double(1.0)
+        Jukebox.effectsVolume = effects.toFloat().coerceIn(0f, 2f)
         Jukebox.volume = volume.toFloat().coerceIn(0f, 2f)
         Jukebox.voice = voice.toFloat().coerceIn(0f, 1f)
         Jukebox.hear = hear
         Jukebox.state()
     }
     registerNativeMethod("deltacord.jukebox.state") { _ -> Jukebox.state() }
+    registerNativeMethod("deltacord.jukebox.effect") { args ->
+        val argv = args.asDelegate()
+        val raw by argv.string()
+        val path = raw.removePrefix("file://")
+        if (!File(path).isFile) throw Error("That sound isn't there any more")
+        Jukebox.effect(path)
+        Jukebox.state()
+    }
+    registerNativeMethod("deltacord.jukebox.stopEffects") { _ ->
+        Jukebox.stopEffects()
+        Jukebox.state()
+    }
     registerNativeMethod("deltacord.jukebox.remove") { args ->
         val argv = args.asDelegate()
         val raw by argv.string()
@@ -102,6 +118,18 @@ private object Jukebox {
     @Volatile var voice = 1f
     @Volatile var hear = true
     @Volatile var paused = false
+    @Volatile var effectsVolume = 1f
+
+    /** A sound effect playing: its samples (48 kHz mono) and how far in it is. */
+    private class Playing(val samples: FloatArray) {
+        var at = 0.0
+    }
+    private val effects = java.util.concurrent.CopyOnWriteArrayList<Playing>()
+    /** Effects decoded already, so tapping one again plays straight away. */
+    private val decoded = object : LinkedHashMap<String, FloatArray>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, FloatArray>?) = size > 12
+    }
+    private var effectBuffer = FloatArray(0)
 
     @Volatile private var track: Track? = null
     @Volatile private var lastError: String? = null
@@ -138,6 +166,46 @@ private object Jukebox {
         monitor?.let { runCatching { it.pause(); it.flush() } }
     }
 
+    /** Plays a short sound on top of whatever's going (decoded once, then kept for a while). */
+    fun effect(path: String) {
+        val cached = synchronized(decoded) { decoded[path] }
+        if (cached != null) {
+            if (effects.size < 8) effects.add(Playing(cached))
+            return
+        }
+        Thread({
+            try {
+                val samples = decodeWhole(path, maxSeconds = 20)
+                synchronized(decoded) { decoded[path] = samples }
+                if (effects.size < 8) effects.add(Playing(samples))
+            } catch (e: Throwable) {
+                lastError = e.message ?: "Couldn't play that sound"
+                Log.e(TAG, "Couldn't play the effect $path", e)
+            }
+        }, "DeltacordJukeboxEffect").apply { isDaemon = true }.start()
+    }
+
+    fun stopEffects() = effects.clear()
+
+    /** Adds the effects that are playing into [out], moving them on; drops the ones that finished. */
+    private fun mixEffects(out: FloatArray, frames: Int, rate: Int): Boolean {
+        if (effects.isEmpty()) return false
+        val step = RATE.toDouble() / rate
+        val v = effectsVolume
+        for (e in effects) {
+            val s = e.samples
+            for (f in 0 until frames) {
+                val i = e.at.toInt()
+                if (i >= s.size - 1) break
+                val frac = (e.at - i).toFloat()
+                out[f] += (s[i] + (s[i + 1] - s[i]) * frac) * v
+                e.at += step
+            }
+            if (e.at.toInt() >= s.size - 1) effects.remove(e)
+        }
+        return true
+    }
+
     fun state(): Map<String, Any?> {
         val t = track
         val sinceRead = if (lastRead == 0L) -1.0 else (SystemClock.elapsedRealtime() - lastRead).toDouble()
@@ -158,6 +226,8 @@ private object Jukebox {
             "micChannels" to micChannels,
             "micFormat" to micFormat,
             "micReads" to reads.toDouble(),
+            "effectsPlaying" to effects.size,
+            "effectsVolume" to effectsVolume.toDouble(),
         )
     }
 
@@ -170,8 +240,9 @@ private object Jukebox {
         val format = record.audioFormat
         micRate = rate; micChannels = channels; micFormat = format
 
-        val t = track ?: return
-        if (paused || t.done && t.available() == 0) return
+        val t = track
+        val music = t != null && !paused && !(t.done && t.available() == 0)
+        if (!music && effects.isEmpty()) return
 
         // How many samples per channel this read holds.
         val frames = when (buffer) {
@@ -184,11 +255,17 @@ private object Jukebox {
         if (frames <= 0) return
         if (buffer is ByteArray && format != AudioFormat.ENCODING_PCM_16BIT) return
 
-        // The music for this stretch of time, at the mic's own rate.
+        // The music for this stretch of time, at the mic's own rate, already at its volume; then
+        // any sound effects on top.
         if (mixBuffer.size < frames) mixBuffer = FloatArray(frames)
-        t.take(mixBuffer, frames, rate)
+        if (music) {
+            t!!.take(mixBuffer, frames, rate)
+            val mv = volume
+            for (f in 0 until frames) mixBuffer[f] *= mv
+        } else java.util.Arrays.fill(mixBuffer, 0, frames, 0f)
+        mixEffects(mixBuffer, frames, rate)
 
-        val v = volume
+        val v = 1f
         val keep = voice
         when (buffer) {
             is ByteBuffer -> {
@@ -222,13 +299,13 @@ private object Jukebox {
             }
         }
 
-        if (hear) hearIt(frames, rate, v)
+        if (hear) hearIt(frames, rate)
     }
 
     private fun clamp16(x: Float): Short = x.roundToInt().coerceIn(-32768, 32767).toShort()
 
     /** Lets you hear the music too, quietly, without ever holding up Discord's mic thread. */
-    private fun hearIt(frames: Int, rate: Int, v: Float) {
+    private fun hearIt(frames: Int, rate: Int) {
         try {
             val out = monitor?.takeIf { it.sampleRate == rate } ?: run {
                 monitor?.release()
@@ -251,12 +328,121 @@ private object Jukebox {
             if (out.playState != AudioTrack.PLAYSTATE_PLAYING) out.play()
             if (monitorBuffer.size < frames) monitorBuffer = ShortArray(frames)
             // Quieter than what you send, so it doesn't drown out the call.
-            val quiet = min(v, 1f) * 0.6f
+            val quiet = 0.6f
             for (f in 0 until frames) monitorBuffer[f] = clamp16(mixBuffer[f] * quiet * 32767f)
             out.write(monitorBuffer, 0, frames, AudioTrack.WRITE_NON_BLOCKING)
         } catch (e: Throwable) {
             hear = false
             Log.e(TAG, "Couldn't play the music to you; turned that off", e)
+        }
+    }
+
+    /** Decodes a short file completely, to 48 kHz mono. */
+    fun decodeWhole(path: String, maxSeconds: Int): FloatArray {
+        val limit = RATE * maxSeconds
+        var out = FloatArray(RATE)
+        var n = 0
+        decode(path, loop = false, stop = { n >= limit }) { samples, count ->
+            val take = min(count, limit - n)
+            if (n + take > out.size) out = out.copyOf(max(out.size * 2, n + take))
+            System.arraycopy(samples, 0, out, n, take)
+            n += take
+        }
+        return out.copyOf(n)
+    }
+
+    /**
+     * Decodes [path] to 48 kHz mono, handing it over in pieces to [put], until the end (or, with
+     * [loop], forever) or until [stop] says so. Returns the file's length in seconds.
+     */
+    fun decode(path: String, loop: Boolean, stop: () -> Boolean, onDuration: (Double) -> Unit = {}, put: (FloatArray, Int) -> Unit) {
+        var extractor: MediaExtractor? = null
+        var codec: MediaCodec? = null
+        try {
+            extractor = MediaExtractor().apply { setDataSource(path) }
+            val index = (0 until extractor.trackCount).firstOrNull {
+                extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+            } ?: throw Error("That file has no sound in it")
+            extractor.selectTrack(index)
+            val format = extractor.getTrackFormat(index)
+            if (format.containsKey(MediaFormat.KEY_DURATION)) onDuration(format.getLong(MediaFormat.KEY_DURATION) / 1_000_000.0)
+            codec = MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME)!!)
+            codec.configure(format, null, null, 0)
+            codec.start()
+
+            var srcRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+            var srcChannels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+            var floats = false
+            val info = MediaCodec.BufferInfo()
+            var inputDone = false
+            var mono = FloatArray(8192)
+            var resampled = FloatArray(8192)
+            var pos = 0.0
+            var prev = 0f
+
+            while (!stop()) {
+                if (!inputDone) {
+                    val i = codec.dequeueInputBuffer(10_000)
+                    if (i >= 0) {
+                        val input = codec.getInputBuffer(i)!!
+                        val size = extractor.readSampleData(input, 0)
+                        if (size < 0) {
+                            codec.queueInputBuffer(i, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                            inputDone = true
+                        } else {
+                            codec.queueInputBuffer(i, 0, size, extractor.sampleTime, 0)
+                            extractor.advance()
+                        }
+                    }
+                }
+                val o = codec.dequeueOutputBuffer(info, 10_000)
+                if (o == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    val f = codec.outputFormat
+                    srcRate = f.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                    srcChannels = f.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                    floats = f.containsKey(MediaFormat.KEY_PCM_ENCODING) && f.getInteger(MediaFormat.KEY_PCM_ENCODING) == AudioFormat.ENCODING_PCM_FLOAT
+                    continue
+                }
+                if (o < 0) continue
+                val out = codec.getOutputBuffer(o)!!.order(ByteOrder.nativeOrder())
+                out.position(info.offset)
+                val frames = info.size / (if (floats) 4 else 2) / max(1, srcChannels)
+                if (mono.size < frames) mono = FloatArray(frames)
+                // Down to one channel.
+                for (f in 0 until frames) {
+                    var sum = 0f
+                    for (c in 0 until srcChannels) sum += if (floats) out.float else out.short / 32768f
+                    mono[f] = sum / srcChannels
+                }
+                codec.releaseOutputBuffer(o, false)
+
+                // To 48 kHz.
+                val step = srcRate.toDouble() / RATE
+                var n = 0
+                val need = (frames / step).toInt() + 2
+                if (resampled.size < need) resampled = FloatArray(need)
+                while (pos < frames) {
+                    val k = pos.toInt()
+                    val a = if (k == 0) prev else mono[k - 1]
+                    val b = mono[min(k, frames - 1)]
+                    resampled[n++] = a + (b - a) * (pos - k).toFloat()
+                    pos += step
+                }
+                pos -= frames
+                if (frames > 0) prev = mono[frames - 1]
+                put(resampled, n)
+
+                if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
+                    if (!loop) break
+                    extractor.seekTo(0, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                    codec.flush()
+                    inputDone = false
+                }
+            }
+        } finally {
+            runCatching { codec?.stop() }
+            runCatching { codec?.release() }
+            runCatching { extractor?.release() }
         }
     }
 
@@ -329,89 +515,8 @@ private object Jukebox {
         }
 
         override fun run() {
-            var extractor: MediaExtractor? = null
-            var codec: MediaCodec? = null
             try {
-                extractor = MediaExtractor().apply { setDataSource(path) }
-                val index = (0 until extractor.trackCount).firstOrNull {
-                    extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
-                } ?: throw Error("That file has no sound in it")
-                extractor.selectTrack(index)
-                val format = extractor.getTrackFormat(index)
-                if (format.containsKey(MediaFormat.KEY_DURATION)) durationSec = format.getLong(MediaFormat.KEY_DURATION) / 1_000_000.0
-                codec = MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME)!!)
-                codec.configure(format, null, null, 0)
-                codec.start()
-
-                var srcRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-                var srcChannels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-                var floats = false
-                val info = MediaCodec.BufferInfo()
-                var inputDone = false
-                var mono = FloatArray(8192)
-                var resampled = FloatArray(8192)
-                var pos = 0.0
-                var prev = 0f
-
-                while (!stopped) {
-                    if (!inputDone) {
-                        val i = codec.dequeueInputBuffer(10_000)
-                        if (i >= 0) {
-                            val input = codec.getInputBuffer(i)!!
-                            val size = extractor.readSampleData(input, 0)
-                            if (size < 0) {
-                                codec.queueInputBuffer(i, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                                inputDone = true
-                            } else {
-                                codec.queueInputBuffer(i, 0, size, extractor.sampleTime, 0)
-                                extractor.advance()
-                            }
-                        }
-                    }
-                    val o = codec.dequeueOutputBuffer(info, 10_000)
-                    if (o == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                        val f = codec.outputFormat
-                        srcRate = f.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-                        srcChannels = f.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-                        floats = f.containsKey(MediaFormat.KEY_PCM_ENCODING) && f.getInteger(MediaFormat.KEY_PCM_ENCODING) == AudioFormat.ENCODING_PCM_FLOAT
-                        continue
-                    }
-                    if (o < 0) continue
-                    val out = codec.getOutputBuffer(o)!!.order(ByteOrder.nativeOrder())
-                    out.position(info.offset)
-                    val frames = info.size / (if (floats) 4 else 2) / max(1, srcChannels)
-                    if (mono.size < frames) mono = FloatArray(frames)
-                    // Down to one channel.
-                    for (f in 0 until frames) {
-                        var sum = 0f
-                        for (c in 0 until srcChannels) sum += if (floats) out.float else out.short / 32768f
-                        mono[f] = sum / srcChannels
-                    }
-                    codec.releaseOutputBuffer(o, false)
-
-                    // To 48 kHz.
-                    val step = srcRate.toDouble() / RATE
-                    var n = 0
-                    val need = (frames / step).toInt() + 2
-                    if (resampled.size < need) resampled = FloatArray(need)
-                    while (pos < frames) {
-                        val k = pos.toInt()
-                        val a = if (k == 0) prev else mono[k - 1]
-                        val b = mono[min(k, frames - 1)]
-                        resampled[n++] = a + (b - a) * (pos - k).toFloat()
-                        pos += step
-                    }
-                    pos -= frames
-                    if (frames > 0) prev = mono[frames - 1]
-                    put(resampled, n)
-
-                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
-                        if (!loop) break
-                        extractor.seekTo(0, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
-                        codec.flush()
-                        inputDone = false
-                    }
-                }
+                decode(path, loop, stop = { stopped }, onDuration = { durationSec = it }) { samples, count -> put(samples, count) }
             } catch (_: InterruptedException) {
             } catch (e: Throwable) {
                 if (!stopped) {
@@ -419,9 +524,6 @@ private object Jukebox {
                     Log.e(TAG, "Couldn't play $path", e)
                 }
             } finally {
-                runCatching { codec?.stop() }
-                runCatching { codec?.release() }
-                runCatching { extractor?.release() }
                 // Let what's left in the buffer play out, then it's done.
                 while (!stopped && available() > 0) runCatching { sleep(100) }
                 done = true
