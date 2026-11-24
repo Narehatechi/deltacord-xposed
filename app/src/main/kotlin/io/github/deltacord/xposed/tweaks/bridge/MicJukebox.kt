@@ -11,6 +11,7 @@ import android.os.SystemClock
 import android.util.Log
 import de.robv.android.xposed.XposedBridge
 import io.github.deltacord.bridge.asDelegate
+import io.github.deltacord.xposed.api.registerNativeAsyncMethod
 import io.github.deltacord.xposed.api.registerNativeMethod
 import io.github.deltacord.xposed.methodHook
 import io.github.deltacord.xposed.tweak
@@ -95,6 +96,9 @@ val micJukebox by tweak {
         Jukebox.effect(path)
         Jukebox.state()
     }
+    // Plays a test tone as a song and as an effect, records from the mic for two seconds the way
+    // Discord's voice engine does, and says what happened. Used to check the jukebox works.
+    registerNativeAsyncMethod("deltacord.jukebox.selfTest") { _ -> Jukebox.selfTest() }
     registerNativeMethod("deltacord.jukebox.stopEffects") { _ ->
         Jukebox.stopEffects()
         Jukebox.state()
@@ -204,6 +208,67 @@ private object Jukebox {
             if (e.at.toInt() >= s.size - 1) effects.remove(e)
         }
         return true
+    }
+
+    fun selfTest(): Map<String, Any?> {
+        val out = linkedMapOf<String, Any?>()
+        val app = android.app.AndroidAppHelper.currentApplication() ?: return mapOf("error" to "no app")
+        // A second and a half of a 440 Hz tone, as a WAV file.
+        val wav = File(app.cacheDir, "jukebox-test.wav")
+        val rate = 44_100
+        val n = rate * 3 / 2
+        val pcm = ByteBuffer.allocate(n * 2).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until n) pcm.putShort((kotlin.math.sin(2 * Math.PI * 440 * i / rate) * 12_000).toInt().toShort())
+        val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN).apply {
+            put("RIFF".toByteArray()); putInt(36 + n * 2); put("WAVE".toByteArray())
+            put("fmt ".toByteArray()); putInt(16); putShort(1); putShort(1); putInt(rate); putInt(rate * 2); putShort(2); putShort(16)
+            put("data".toByteArray()); putInt(n * 2)
+        }
+        wav.outputStream().use { it.write(header.array()); it.write(pcm.array()) }
+
+        val steps = mutableListOf<String>()
+        fun step(name: String, block: () -> Unit) {
+            try {
+                block(); steps.add("$name: ok")
+            } catch (e: Throwable) {
+                steps.add("$name: ${e.javaClass.simpleName}: ${e.message}")
+                Log.e(TAG, "Self-test step $name failed", e)
+            }
+        }
+        step("play") { play(wav.path, loop = true) }
+        step("effect") { effect(wav.path) }
+
+        var record: AudioRecord? = null
+        var reads = 0
+        var peak = 0
+        step("record") {
+            val size = max(AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT), 3840)
+            @Suppress("MissingPermission")
+            record = AudioRecord(android.media.MediaRecorder.AudioSource.VOICE_COMMUNICATION, RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, size * 2)
+            val r = record!!
+            if (r.state != AudioRecord.STATE_INITIALIZED) throw Error("mic not available (state ${r.state})")
+            r.startRecording()
+            // Like WebRTC: 10 ms reads into a direct buffer.
+            val buffer = ByteBuffer.allocateDirect(960)
+            val end = SystemClock.elapsedRealtime() + 2_000
+            while (SystemClock.elapsedRealtime() < end) {
+                val got = r.read(buffer, buffer.capacity())
+                if (got <= 0) continue
+                reads++
+                val b = buffer.duplicate().order(ByteOrder.nativeOrder())
+                for (i in 0 until got / 2) peak = max(peak, kotlin.math.abs(b.getShort(i * 2).toInt()))
+            }
+        }
+        runCatching { record?.stop() }
+        runCatching { record?.release() }
+        out["afterReads"] = state()
+        step("stop") { stop(); stopEffects() }
+        out["steps"] = steps
+        out["reads"] = reads
+        // Above a quiet mic's level means the tone was mixed in.
+        out["peak"] = peak
+        out["mixedIn"] = peak > 4_000
+        return out
     }
 
     fun state(): Map<String, Any?> {

@@ -57,6 +57,7 @@ class Main : IXposedHookLoadPackage, IXposedHookZygoteInit {
         deltacordBundleManifest,
 
         // Consumers
+        crashRecorder,
         recoveryCompanion,
         playDeliveryFix,
         startupAnimation,
