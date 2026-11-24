@@ -35,7 +35,6 @@ val crashRecorder by tweak {
         }
         previous?.uncaughtException(thread, error)
     }
-}
 
     // Android's record of why Discord last closed (Android 11 and newer).
     if (Build.VERSION.SDK_INT >= 30) {
