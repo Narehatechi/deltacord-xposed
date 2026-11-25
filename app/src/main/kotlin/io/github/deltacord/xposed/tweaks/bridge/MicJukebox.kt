@@ -43,6 +43,22 @@ import kotlin.math.roundToInt
  * - `deltacord.jukebox.stopEffects()`: stops the sound effects that are playing
  */
 val micJukebox by tweak {
+    // Discord's voice engine (WebRTC) records the mic through Android's AudioRecord only when the
+    // phone says it has no low-latency input; otherwise it uses OpenSL ES in native code, which
+    // nothing here can reach (that's what Pixel phones do). Saying no keeps the mic on AudioRecord,
+    // where the Jukebox mixes in. Sound you hear keeps the fast native path.
+    try {
+        val manager = classLoader.loadClass("org.webrtc.audio.WebRtcAudioManager")
+        XposedBridge.hookAllMethods(manager, "isLowLatencyInputSupported", methodHook {
+            after {
+                if (result == true) Jukebox.lowLatencyAvoided = true
+                result = false
+            }
+        }.build())
+    } catch (e: Throwable) {
+        Log.w("DeltacordJukebox", "Couldn't keep Discord's mic on AudioRecord", e)
+    }
+
     // Every way AudioRecord can be read. The music goes in after Discord's read fills the buffer.
     XposedBridge.hookAllMethods(AudioRecord::class.java, "read", methodHook {
         after {
@@ -123,6 +139,8 @@ private object Jukebox {
     @Volatile var hear = true
     @Volatile var paused = false
     @Volatile var effectsVolume = 1f
+    /** Discord would have used native (OpenSL ES) mic input here, and was steered to AudioRecord. */
+    @Volatile var lowLatencyAvoided = false
 
     /** A sound effect playing: its samples (48 kHz mono) and how far in it is. */
     private class Playing(val samples: FloatArray) {
@@ -292,6 +310,7 @@ private object Jukebox {
             "micFormat" to micFormat,
             "micReads" to reads.toDouble(),
             "effectsPlaying" to effects.size,
+            "lowLatencyAvoided" to lowLatencyAvoided,
             "effectsVolume" to effectsVolume.toDouble(),
         )
     }
