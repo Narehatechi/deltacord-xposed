@@ -1,0 +1,3 @@
+Deltacord is stuck starting
+COPY REPORT
+OPEN WITHOUT DELTACORD

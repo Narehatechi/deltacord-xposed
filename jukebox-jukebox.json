@@ -1,0 +1,32 @@
+{
+ "mixedIn": true,
+ "peak": 19422,
+ "reads": 197,
+ "songSecondsPer2sRecorded": 1.97,
+ "steps": [
+  "play: ok",
+  "effect: ok",
+  "record: ok",
+  "stop: ok"
+ ],
+ "afterReads": {
+  "micReads": 197,
+  "micChannels": 1,
+  "effectsPlaying": 0,
+  "micOpen": true,
+  "hear": true,
+  "lowLatencyAvoided": false,
+  "error": null,
+  "micFormat": 2,
+  "duration": 1.5,
+  "path": "/data/user/0/com.discord/cache/jukebox-test.wav",
+  "effectsVolume": 1,
+  "voice": 1,
+  "position": 1.97,
+  "micRate": 48000,
+  "loop": true,
+  "paused": false,
+  "volume": 1,
+  "playing": true
+ }
+}

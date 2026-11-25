@@ -1,0 +1,70 @@
+/data/data/com.discord/cache/deltacord:
+total 476
+drwx--S---  2 u0_a192 u0_a192_cache   4096 2026-11-25 00:47 .
+drwxrws--x 10 u0_a192 u0_a192_cache   4096 2026-11-25 00:48 ..
+-rw-------  1 u0_a192 u0_a192_cache 448363 2026-11-25 00:47 bundle.js
+-rw-------  1 u0_a192 u0_a192_cache    453 2026-11-25 00:47 dexkit.json
+-rw-------  1 u0_a192 u0_a192_cache     19 2026-11-25 00:47 etag.txt
+
+/data/data/com.discord/files/pyoncord:
+total 180
+drwxrwxrwx 7 u0_a192 u0_a192  4096 2026-11-25 00:48 .
+drwxrwxrwx 7 u0_a192 u0_a192  4096 2026-11-25 00:48 ..
+drwx------ 2 u0_a192 u0_a192  4096 2026-11-25 00:48 caches
+-rw------- 1 u0_a192 u0_a192 56914 2026-11-25 00:48 current-theme.json
+-rw------- 1 u0_a192 u0_a192    38 2026-11-25 00:48 deltacord-crashguard.json
+-rw------- 1 u0_a192 u0_a192    53 2026-11-25 00:48 deltacord-features.json
+drwx------ 2 u0_a192 u0_a192  4096 2026-11-25 00:48 deltacord-sounds
+-rw------- 1 u0_a192 u0_a192  3866 2026-11-25 00:48 deltacord-startup.json
+-rw------- 1 u0_a192 u0_a192    12 2026-11-25 00:48 deltacord-world.json
+-rw------- 1 u0_a192 u0_a192  2235 2026-11-25 00:48 freeze-report.txt
+-rw------- 1 u0_a192 u0_a192    13 2026-11-25 00:48 last-launch-stuck
+-rw-rw-rw- 1 u0_a192 u0_a192   132 2026-11-25 00:47 loader.json
+drwx------ 3 u0_a192 u0_a192  4096 2026-11-25 00:48 plugins
+drwx------ 2 u0_a192 u0_a192  4096 2026-11-25 00:48 preloads
+-rw------- 1 u0_a192 u0_a192    77 2026-11-25 00:48 startup-recovery.json
+drwx------ 3 u0_a192 u0_a192  4096 2026-11-25 00:48 themes
+
+/data/data/com.discord/files/pyoncord/caches:
+total 60
+drwx------ 2 u0_a192 u0_a192  4096 2026-11-25 00:48 .
+drwxrwxrwx 7 u0_a192 u0_a192  4096 2026-11-25 00:48 ..
+-rw------- 1 u0_a192 u0_a192 39224 2026-11-25 00:48 metro_modules.json
+
+/data/data/com.discord/files/pyoncord/deltacord-sounds:
+total 32
+drwx------ 2 u0_a192 u0_a192 4096 2026-11-25 00:48 .
+drwxrwxrwx 7 u0_a192 u0_a192 4096 2026-11-25 00:48 ..
+-rw------- 1 u0_a192 u0_a192 1036 2026-11-25 00:48 cache-no7hau.wav
+-rw------- 1 u0_a192 u0_a192  844 2026-11-25 00:48 silent.wav
+
+/data/data/com.discord/files/pyoncord/plugins:
+total 40
+drwx------ 3 u0_a192 u0_a192 4096 2026-11-25 00:48 .
+drwxrwxrwx 7 u0_a192 u0_a192 4096 2026-11-25 00:48 ..
+drwx------ 2 u0_a192 u0_a192 4096 2026-11-25 00:48 manifests
+-rw------- 1 u0_a192 u0_a192   96 2026-11-25 00:48 repositories.json
+-rw------- 1 u0_a192 u0_a192  796 2026-11-25 00:48 settings.json
+
+/data/data/com.discord/files/pyoncord/plugins/manifests:
+total 24
+drwx------ 2 u0_a192 u0_a192 4096 2026-11-25 00:48 .
+drwx------ 3 u0_a192 u0_a192 4096 2026-11-25 00:48 ..
+-rw------- 1 u0_a192 u0_a192  326 2026-11-25 00:48 pylixonly.hidechatbutton.json
+
+/data/data/com.discord/files/pyoncord/preloads:
+total 16
+drwx------ 2 u0_a192 u0_a192 4096 2026-11-25 00:48 .
+drwxrwxrwx 7 u0_a192 u0_a192 4096 2026-11-25 00:48 ..
+
+/data/data/com.discord/files/pyoncord/themes:
+total 24
+drwx------ 3 u0_a192 u0_a192 4096 2026-11-25 00:48 .
+drwxrwxrwx 7 u0_a192 u0_a192 4096 2026-11-25 00:48 ..
+drwx------ 2 u0_a192 u0_a192 4096 2026-11-25 00:48 colors
+
+/data/data/com.discord/files/pyoncord/themes/colors:
+total 24
+drwx------ 2 u0_a192 u0_a192 4096 2026-11-25 00:48 .
+drwx------ 3 u0_a192 u0_a192 4096 2026-11-25 00:48 ..
+-rw------- 1 u0_a192 u0_a192   41 2026-11-25 00:48 preferences.json

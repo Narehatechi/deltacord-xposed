@@ -1,0 +1,2 @@
+RESULT warmup: STUCK? (Deltacord is stuck starting|COPY REPORT|OPEN WITHOUT DELTACORD|)
+RESULT jukebox: LOGIN SCREEN

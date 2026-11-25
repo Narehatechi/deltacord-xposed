@@ -1,0 +1,103 @@
+/data/data/com.discord/cache/deltacord:
+total 476
+drwx--S---  2 u0_a192 u0_a192_cache   4096 2026-11-25 00:47 .
+drwxrws--x 10 u0_a192 u0_a192_cache   4096 2026-11-25 00:49 ..
+-rw-------  1 u0_a192 u0_a192_cache 448363 2026-11-25 00:47 bundle.js
+-rw-------  1 u0_a192 u0_a192_cache    453 2026-11-25 00:47 dexkit.json
+-rw-------  1 u0_a192 u0_a192_cache     19 2026-11-25 00:47 etag.txt
+
+/data/data/com.discord/files/pyoncord:
+total 204
+drwxrwxrwx 8 u0_a192 u0_a192  4096 2026-11-25 00:49 .
+drwxrwxrwx 7 u0_a192 u0_a192  4096 2026-11-25 00:49 ..
+drwx------ 2 u0_a192 u0_a192  4096 2026-11-25 00:49 caches
+-rw------- 1 u0_a192 u0_a192 56914 2026-11-25 00:48 current-theme.json
+-rw------- 1 u0_a192 u0_a192    38 2026-11-25 00:49 deltacord-crashguard.json
+-rw------- 1 u0_a192 u0_a192    53 2026-11-25 00:49 deltacord-features.json
+drwx------ 2 u0_a192 u0_a192  4096 2026-11-25 00:48 deltacord-sounds
+-rw------- 1 u0_a192 u0_a192  3843 2026-11-25 00:49 deltacord-startup.json
+-rw------- 1 u0_a192 u0_a192    12 2026-11-25 00:49 deltacord-world.json
+drwx------ 3 u0_a192 u0_a192  4096 2026-11-25 00:49 downloads
+-rw------- 1 u0_a192 u0_a192  1766 2026-11-25 00:49 fonts.json
+-rw------- 1 u0_a192 u0_a192  2235 2026-11-25 00:48 freeze-report.txt
+-rw------- 1 u0_a192 u0_a192   568 2026-11-25 00:49 jukebox-selftest-result.json
+-rw------- 1 u0_a192 u0_a192   183 2026-11-25 00:49 last-exit.txt
+-rw-rw-rw- 1 u0_a192 u0_a192   132 2026-11-25 00:48 loader.json
+drwx------ 3 u0_a192 u0_a192  4096 2026-11-25 00:49 plugins
+drwx------ 2 u0_a192 u0_a192  4096 2026-11-25 00:49 preloads
+-rw------- 1 u0_a192 u0_a192    77 2026-11-25 00:49 startup-recovery.json
+drwx------ 3 u0_a192 u0_a192  4096 2026-11-25 00:48 themes
+
+/data/data/com.discord/files/pyoncord/caches:
+total 60
+drwx------ 2 u0_a192 u0_a192  4096 2026-11-25 00:49 .
+drwxrwxrwx 8 u0_a192 u0_a192  4096 2026-11-25 00:49 ..
+-rw------- 1 u0_a192 u0_a192 39279 2026-11-25 00:49 metro_modules.json
+
+/data/data/com.discord/files/pyoncord/deltacord-sounds:
+total 32
+drwx------ 2 u0_a192 u0_a192 4096 2026-11-25 00:48 .
+drwxrwxrwx 8 u0_a192 u0_a192 4096 2026-11-25 00:49 ..
+-rw------- 1 u0_a192 u0_a192 1036 2026-11-25 00:48 cache-no7hau.wav
+-rw------- 1 u0_a192 u0_a192  844 2026-11-25 00:48 silent.wav
+
+/data/data/com.discord/files/pyoncord/downloads:
+total 24
+drwx------ 3 u0_a192 u0_a192 4096 2026-11-25 00:49 .
+drwxrwxrwx 8 u0_a192 u0_a192 4096 2026-11-25 00:49 ..
+drwx------ 3 u0_a192 u0_a192 4096 2026-11-25 00:49 fonts
+
+/data/data/com.discord/files/pyoncord/downloads/fonts:
+total 24
+drwx------ 3 u0_a192 u0_a192 4096 2026-11-25 00:49 .
+drwx------ 3 u0_a192 u0_a192 4096 2026-11-25 00:49 ..
+drwx------ 2 u0_a192 u0_a192 4096 2026-11-25 00:49 Determination
+
+/data/data/com.discord/files/pyoncord/downloads/fonts/Determination:
+total 588
+drwx------ 2 u0_a192 u0_a192  4096 2026-11-25 00:49 .
+drwx------ 3 u0_a192 u0_a192  4096 2026-11-25 00:49 ..
+-rw------- 1 u0_a192 u0_a192 40124 2026-11-25 00:49 ABCGintoNord-ExtraBold.ttf
+-rw------- 1 u0_a192 u0_a192 40124 2026-11-25 00:49 ggmono-Bold.ttf
+-rw------- 1 u0_a192 u0_a192 40124 2026-11-25 00:49 ggmono-Normal.ttf
+-rw------- 1 u0_a192 u0_a192 40124 2026-11-25 00:49 ggsans-Bold.ttf
+-rw------- 1 u0_a192 u0_a192 40124 2026-11-25 00:49 ggsans-BoldItalic.ttf
+-rw------- 1 u0_a192 u0_a192 40124 2026-11-25 00:49 ggsans-ExtraBold.ttf
+-rw------- 1 u0_a192 u0_a192 40124 2026-11-25 00:49 ggsans-ExtraBoldItalic.ttf
+-rw------- 1 u0_a192 u0_a192 40124 2026-11-25 00:49 ggsans-Medium.ttf
+-rw------- 1 u0_a192 u0_a192 40124 2026-11-25 00:49 ggsans-MediumItalic.ttf
+-rw------- 1 u0_a192 u0_a192 40124 2026-11-25 00:49 ggsans-Normal.ttf
+-rw------- 1 u0_a192 u0_a192 40124 2026-11-25 00:49 ggsans-NormalItalic.ttf
+-rw------- 1 u0_a192 u0_a192 40124 2026-11-25 00:49 ggsans-Semibold.ttf
+-rw------- 1 u0_a192 u0_a192 40124 2026-11-25 00:49 ggsans-SemiboldItalic.ttf
+
+/data/data/com.discord/files/pyoncord/plugins:
+total 40
+drwx------ 3 u0_a192 u0_a192 4096 2026-11-25 00:49 .
+drwxrwxrwx 8 u0_a192 u0_a192 4096 2026-11-25 00:49 ..
+drwx------ 2 u0_a192 u0_a192 4096 2026-11-25 00:48 manifests
+-rw------- 1 u0_a192 u0_a192   96 2026-11-25 00:48 repositories.json
+-rw------- 1 u0_a192 u0_a192  796 2026-11-25 00:49 settings.json
+
+/data/data/com.discord/files/pyoncord/plugins/manifests:
+total 24
+drwx------ 2 u0_a192 u0_a192 4096 2026-11-25 00:48 .
+drwx------ 3 u0_a192 u0_a192 4096 2026-11-25 00:49 ..
+-rw------- 1 u0_a192 u0_a192  326 2026-11-25 00:48 pylixonly.hidechatbutton.json
+
+/data/data/com.discord/files/pyoncord/preloads:
+total 16
+drwx------ 2 u0_a192 u0_a192 4096 2026-11-25 00:49 .
+drwxrwxrwx 8 u0_a192 u0_a192 4096 2026-11-25 00:49 ..
+
+/data/data/com.discord/files/pyoncord/themes:
+total 24
+drwx------ 3 u0_a192 u0_a192 4096 2026-11-25 00:48 .
+drwxrwxrwx 8 u0_a192 u0_a192 4096 2026-11-25 00:49 ..
+drwx------ 2 u0_a192 u0_a192 4096 2026-11-25 00:48 colors
+
+/data/data/com.discord/files/pyoncord/themes/colors:
+total 24
+drwx------ 2 u0_a192 u0_a192 4096 2026-11-25 00:48 .
+drwx------ 3 u0_a192 u0_a192 4096 2026-11-25 00:48 ..
+-rw------- 1 u0_a192 u0_a192   41 2026-11-25 00:48 preferences.json
