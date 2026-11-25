@@ -1,5 +1,5 @@
 name: APK probe
-# One-off: names of the parts of Discord's voice call controls.
+# One-off: how Discord's WebRTC picks between Java AudioRecord and OpenSL ES for the mic.
 on:
   push:
     branches: [apk-probe]
@@ -13,12 +13,9 @@ jobs:
           for mirror in https://tracker.vendetta.rocks https://tracker.vd.nexpid.xyz https://proxy.vd.ushie.dev; do
             curl -fsSL --retry 2 --max-time 300 -o base.apk "$mirror/tracker/download/354012/base" && break
           done
-          unzip -q -o base.apk 'assets/index.android.bundle' && ls -la assets
-          strings -n 6 assets/index.android.bundle > s.txt
-          # Hermes keeps its strings packed together, so look for names inside them.
-          look() { echo "== $1"; grep -a -o -E "$2" assets/index.android.bundle | sort | uniq -c | sort -rn | head -${3:-60}; }
-          look soundboard '[A-Z][a-z]+[A-Za-z0-9]*Soundboard[A-Z][A-Za-z0-9]{2,40}|Soundboard[A-Z][A-Za-z0-9]{2,40}'
-          look callcontrols '[A-Za-z0-9]{0,30}(CallControl|VoiceControl|ControlButton|ControlsButton|VoicePanel|CallBar|ControlBar|ControlTray|ActionBar|CallControlsTray|ControlsRow)[A-Za-z0-9]{0,30}' 120
-          look screenshare '[A-Za-z0-9]{0,30}(ScreenShare|Screenshare)[A-Za-z0-9]{0,20}Button[A-Za-z0-9]{0,20}'
-          look disconnect '[A-Za-z0-9]{0,30}(DisconnectButton|EndCallButton|HangUpButton|LeaveCallButton)[A-Za-z0-9]{0,20}'
-          look video '[A-Za-z0-9]{0,30}(VideoButton|CameraButton|MuteButton|MicButton|MicrophoneButton)[A-Za-z0-9]{0,20}'
+          mkdir dex && cd dex && unzip -q -o ../base.apk 'classes*.dex'
+          look() { echo "== $1"; cat classes*.dex | grep -a -o -E "$2" | sort | uniq -c | sort -rn | head -${3:-40}; }
+          look classes 'L[a-z/]*(webrtc|discord)[a-z/]*/(WebRtcAudio[A-Za-z]*|JavaAudioDeviceModule[A-Za-z$]*|AudioDeviceModule|OpenSLES[A-Za-z]*|LowLatency[A-Za-z]*|AudioRecord[A-Za-z]*);' 60
+          look methods '(isLowLatency[A-Za-z]*|setBlacklistDeviceForOpenSLESUsage|isOpenSLES[A-Za-z]*|setUseOpenSLES|useOpenSLES[A-Za-z]*|OpenSLESUsage[A-Za-z]*|isAAudio[A-Za-z]*|setUseLowLatency[A-Za-z]*|useLowLatency[A-Za-z]*|setUseHardware[A-Za-z]*|isAcousticEchoCancelerSupported|setUseStereoInput|builder|setAudioSource)' 60
+          cd .. && curl -fsSL --retry 2 -o arm.apk "https://tracker.vendetta.rocks/tracker/download/354012/config.arm64_v8a" && unzip -q -o arm.apk 'lib/arm64-v8a/libdiscord.so' -d so
+          echo "== libdiscord audio strings"; strings so/lib/arm64-v8a/libdiscord.so | grep -E -i "opensl|aaudio|audio_layer|AudioLayer|LowLatency|WebRtcAudioRecord|JavaAudio|audio device|kAndroid|AudioRecordJni|OpenSLESRecorder" | sort -u | head -60
