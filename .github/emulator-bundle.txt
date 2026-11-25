@@ -1,1 +1,1 @@
-ref:jukebox-selftest
+https://github.com/Narehatechi/deltacord-bundle/releases/latest/download/deltacord.min.js
