@@ -60,8 +60,18 @@ val micJukebox by tweak {
     }
 
     // Every way AudioRecord can be read. The music goes in after Discord's read fills the buffer.
+    // Android's read(buffer, size) calls read(buffer, size, mode) inside, so both are hooked
+    // for one read; mixing in both took the music twice as fast (sped up, and doubled). Only the
+    // outermost call of each read mixes.
+    val depth = ThreadLocal.withInitial { 0 }
     XposedBridge.hookAllMethods(AudioRecord::class.java, "read", methodHook {
+        before {
+            depth.set(depth.get() + 1)
+        }
         after {
+            val level = depth.get() - 1
+            depth.set(level)
+            if (level != 0) return@after
             try {
                 val count = (result as? Int) ?: return@after
                 if (count <= 0) return@after
@@ -280,6 +290,8 @@ private object Jukebox {
         runCatching { record?.stop() }
         runCatching { record?.release() }
         out["afterReads"] = state()
+        // About 2 when the music keeps time with the mic (it was about 4 when it ran double speed).
+        out["songSecondsPer2sRecorded"] = state()["position"]
         step("stop") { stop(); stopEffects() }
         out["steps"] = steps
         out["reads"] = reads
